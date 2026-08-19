@@ -1,0 +1,10 @@
+cd D:\MySystems\clothing-store-phase\clothing-store\backend
+
+# Activate virtual environment (if using .venv or venv)
+.venv\Scripts\activate
+
+# Run database migrations (if not done yet)
+python manage.py migrate
+
+# Start the Django development server
+python manage.py runserver 0.0.0.0:8000

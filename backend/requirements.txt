@@ -1,0 +1,17 @@
+Django==5.1.2
+djangorestframework==3.15.2
+djangorestframework-simplejwt==5.3.1
+django-environ==0.11.2
+django-cors-headers==4.4.0
+psycopg[binary]==3.2.3
+gunicorn==23.0.0
+
+# Added in later phases (kept here as a roadmap, uncomment when needed):
+# django-filter==24.3                    -> Phase 3 (product filtering)
+# cloudinary==1.41.0                     -> Phase 3 (product images)
+# django-cloudinary-storage==0.3.0       -> Phase 3
+# stripe==11.1.0                         -> Phase 6 (payments)
+# resend==2.4.0                          -> Phase 9 (transactional email)
+# django-redis==5.4.0                    -> Phase 10 (rate limiting/caching)
+# sentry-sdk==2.17.0                     -> Phase 10 (error monitoring)
+# whitenoise==6.7.0                      -> Phase 10 (static files in prod)
