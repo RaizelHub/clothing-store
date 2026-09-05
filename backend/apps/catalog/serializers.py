@@ -241,6 +241,12 @@ class AdminColorInputSerializer(serializers.Serializer):
     hex = serializers.CharField(max_length=7)
 
 
+class AdminProductImageInputSerializer(serializers.Serializer):
+    image = serializers.CharField(max_length=600)
+    alt = serializers.CharField(max_length=220, required=False, allow_blank=True)
+    color_id = serializers.IntegerField(required=False, allow_null=True)
+
+
 class AdminProductInputSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=160)
     tagline = serializers.CharField(required=False, allow_blank=True)
@@ -254,6 +260,7 @@ class AdminProductInputSerializer(serializers.Serializer):
     is_new = serializers.BooleanField(required=False)
     variants = AdminVariantInputSerializer(many=True, required=False)
     colors = AdminColorInputSerializer(many=True, required=False)
+    images = AdminProductImageInputSerializer(many=True, required=False)
 
 
 class InventoryRowSerializer(serializers.Serializer):

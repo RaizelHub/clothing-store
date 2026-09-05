@@ -12,6 +12,7 @@ export function AdminSettings() {
 
   const [form, setForm] = useState<{
     store_name: string;
+    currency: string;
     tax_rate: string;
     shipping_flat_rate: string;
     free_shipping_threshold: string;
@@ -23,6 +24,7 @@ export function AdminSettings() {
 
   const displayed = form ?? (settings ? {
     store_name: settings.store_name,
+    currency: settings.currency || "PHP",
     tax_rate: String(settings.tax_rate * 100),
     shipping_flat_rate: settings.shipping_flat_rate,
     free_shipping_threshold: settings.free_shipping_threshold ?? "",
@@ -33,6 +35,7 @@ export function AdminSettings() {
     mutationFn: () =>
       updateStoreSettings({
         store_name: displayed?.store_name ?? "",
+        currency: displayed?.currency ?? "PHP",
         tax_rate: (Number(displayed?.tax_rate) || 0) / 100,
         shipping_flat_rate: (Number(displayed?.shipping_flat_rate) || 0).toFixed(2),
         free_shipping_threshold: displayed?.free_shipping_threshold === "" ? null : (Number(displayed?.free_shipping_threshold) || 0).toFixed(2),
@@ -41,6 +44,7 @@ export function AdminSettings() {
     onSuccess: (s) => {
       setForm({
         store_name: s.store_name,
+        currency: s.currency,
         tax_rate: String((s.tax_rate * 100).toFixed(2)),
         shipping_flat_rate: s.shipping_flat_rate,
         free_shipping_threshold: s.free_shipping_threshold ?? "",
@@ -65,9 +69,23 @@ export function AdminSettings() {
         <p className="py-10 text-center text-sm text-stone-400">Loading…</p>
       ) : (
         <div className="space-y-5 border border-stone-200 p-6">
-          <Field label="Store name">
-            <Input value={displayed.store_name} onChange={(e) => setForm({ ...displayed, store_name: e.target.value })} />
-          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Store name">
+              <Input value={displayed.store_name} onChange={(e) => setForm({ ...displayed, store_name: e.target.value })} />
+            </Field>
+            <Field label="Store currency">
+              <select
+                value={displayed.currency}
+                onChange={(e) => setForm({ ...displayed, currency: e.target.value })}
+                className="w-full border border-stone-300 bg-paper px-3 py-2 text-sm focus:border-ink focus:outline-none"
+              >
+                <option value="PHP">PHP — Philippine Peso (₱)</option>
+                <option value="USD">USD — US Dollar ($)</option>
+                <option value="EUR">EUR — Euro (€)</option>
+                <option value="GBP">GBP — British Pound (£)</option>
+              </select>
+            </Field>
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Tax rate (%)">
@@ -80,7 +98,7 @@ export function AdminSettings() {
                 onChange={(e) => setForm({ ...displayed, tax_rate: e.target.value })}
               />
             </Field>
-            <Field label="Flat shipping (currency)">
+            <Field label="Flat shipping (PHP / ₱)">
               <Input
                 type="number"
                 min="0"

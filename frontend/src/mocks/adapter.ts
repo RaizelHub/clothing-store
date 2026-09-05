@@ -201,8 +201,11 @@ function slugify(s: string): string {
 
 // --- cart helpers ----------------------------------------------------------
 
-function ownerKey(me: DBUser | null): string | number {
-  return me ? me.id : "guest";
+function ownerKey(me: DBUser | null, headers?: Record<string, string>): string | number {
+  if (me) return me.id;
+  const h = headers ?? {};
+  const guestHeader = h["x-guest-session-id"] || h["X-Guest-Session-ID"];
+  return guestHeader ? `guest:${guestHeader}` : "guest";
 }
 
 function joinCartItem(db: DBState, raw: DBCartItem): CartItem | null {
@@ -220,10 +223,11 @@ function joinCartItem(db: DBState, raw: DBCartItem): CartItem | null {
   };
 }
 
-function getCart(db: DBState, me: DBUser | null): Cart {
-  const raw = db.carts[String(ownerKey(me))] ?? [];
+function getCart(db: DBState, me: DBUser | null, headers?: Record<string, string>): Cart {
+  const key = String(ownerKey(me, headers));
+  const raw = db.carts[key] ?? [];
   const items = raw.map((r) => joinCartItem(db, r)).filter((i): i is CartItem => i !== null);
-  db.carts[String(ownerKey(me))] = raw.filter((r) => items.some((i) => i.id === r.id));
+  db.carts[key] = raw.filter((r) => items.some((i) => i.id === r.id));
   saveDB();
   const subtotal = items.reduce((s, i) => s + Math.round(parseFloat(i.unit_price) * 100) * i.quantity, 0);
   return {
@@ -404,15 +408,18 @@ function buildOrder(
   db: DBState,
   me: DBUser | null,
   body: {
+    customer_email?: string;
+    customer_name?: string;
     shipping_address: Order["shipping_address"];
     billing_address: Order["billing_address"];
     billing_same_as_shipping: boolean;
     shipping_method: string;
     coupon_code: string | null;
     payment: { provider: string; method: string; last4?: string };
-  }
+  },
+  headers?: Record<string, string>
 ): Order {
-  const owner = String(ownerKey(me));
+  const owner = String(ownerKey(me, headers));
   const raw = db.carts[owner] ?? [];
   const items = raw.map((r) => joinCartItem(db, r)).filter((i): i is CartItem => i !== null);
   if (!items.length) fail(400, { detail: "Cart is empty." });
@@ -430,6 +437,8 @@ function buildOrder(
   const last4 = body.payment.last4 ?? "4242";
   const orderNumber = `ST-${1000 + db.seq.order * 17}`;
   db.seq.order++;
+  const orderEmail = body.customer_email || me?.email || body.shipping_address.recipient || "";
+  const orderName = body.customer_name || (me ? `${me.first_name} ${me.last_name}`.trim() : body.shipping_address.recipient) || "";
   const order: DBOrder = {
     id: db.seq.order,
     order_number: orderNumber,
@@ -464,8 +473,8 @@ function buildOrder(
       { status: "paid", at: new Date().toISOString(), note: "Payment confirmed" },
     ],
     created_at: new Date().toISOString(),
-    customer_email: me?.email ?? body.shipping_address.recipient,
-    customer_name: me ? `${me.first_name} ${me.last_name}`.trim() : body.shipping_address.recipient,
+    customer_email: orderEmail,
+    customer_name: orderName,
     user_id: me?.id ?? null,
   };
 
@@ -852,16 +861,16 @@ const routes: MockRoute[] = [
   {
     method: "get",
     pattern: /^\/cart\/?$/,
-    handler: ({ db, me }) => ok(200, getCart(db, me)),
+    handler: ({ db, me, headers }) => ok(200, getCart(db, me, headers)),
   },
   {
     method: "post",
     pattern: /^\/cart\/items\/?$/,
-    handler: ({ db, me, body }) => {
+    handler: ({ db, me, body, headers }) => {
       const v = db.products.flatMap((p) => p.variants).find((vv) => vv.id === Number(body.variant_id));
       if (!v) fail(400, errField("variant_id", "Variant not found."));
       if (v.stock <= 0) fail(400, errField("variant_id", "This size is out of stock."));
-      const key = String(ownerKey(me));
+      const key = String(ownerKey(me, headers));
       const cart = db.carts[key] ?? [];
       const existing = cart.find((i) => i.variant_id === v.id);
       if (existing) {
@@ -871,14 +880,14 @@ const routes: MockRoute[] = [
       }
       db.carts[key] = cart;
       saveDB();
-      return ok(201, getCart(db, me));
+      return ok(201, getCart(db, me, headers));
     },
   },
   {
     method: "patch",
     pattern: /^\/cart\/items\/(\d+)\/?$/,
-    handler: ({ db, me, body }, m) => {
-      const key = String(ownerKey(me));
+    handler: ({ db, me, body, headers }, m) => {
+      const key = String(ownerKey(me, headers));
       const raw = db.carts[key] ?? [];
       const item = raw.find((i) => i.id === Number(m[1]));
       if (!item) fail(404, { detail: "Not found." });
@@ -892,25 +901,26 @@ const routes: MockRoute[] = [
       }
       db.carts[key] = db.carts[key] ?? raw;
       saveDB();
-      return ok(200, { cart: getCart(db, me), item: joinCartItem(db, item) });
+      return ok(200, { cart: getCart(db, me, headers), item: joinCartItem(db, item) });
     },
   },
   {
     method: "delete",
     pattern: /^\/cart\/items\/(\d+)\/?$/,
-    handler: ({ db, me }, m) => {
-      const key = String(ownerKey(me));
+    handler: ({ db, me, headers }, m) => {
+      const key = String(ownerKey(me, headers));
       db.carts[key] = (db.carts[key] ?? []).filter((i) => i.id !== Number(m[1]));
       saveDB();
-      return ok(200, getCart(db, me));
+      return ok(200, getCart(db, me, headers));
     },
   },
   {
     method: "post",
     pattern: /^\/cart\/merge\/?$/,
-    handler: ({ db, me }) => {
+    handler: ({ db, me, headers }) => {
       if (!me) fail(401, { detail: "Authentication credentials were not provided." });
-      const guest = db.carts["guest"] ?? [];
+      const guestKey = String(ownerKey(null, headers));
+      const guest = db.carts[guestKey] ?? db.carts["guest"] ?? [];
       const mine = db.carts[String(me.id)] ?? [];
       for (const g of guest) {
         const existing = mine.find((i) => i.variant_id === g.variant_id);
@@ -921,9 +931,10 @@ const routes: MockRoute[] = [
         }
       }
       db.carts[String(me.id)] = mine;
-      db.carts["guest"] = [];
+      delete db.carts[guestKey];
+      delete db.carts["guest"];
       saveDB();
-      return ok(200, getCart(db, me));
+      return ok(200, getCart(db, me, headers));
     },
   },
 
@@ -931,8 +942,8 @@ const routes: MockRoute[] = [
   {
     method: "get",
     pattern: /^\/wishlist\/?$/,
-    handler: ({ db, me }) => {
-      const key = String(ownerKey(me));
+    handler: ({ db, me, headers }) => {
+      const key = String(ownerKey(me, headers));
       const ids = db.wishes[key] ?? [];
       const items: WishlistItem[] = ids
         .map<WishlistItem | null>((pid, idx) => {
@@ -947,11 +958,11 @@ const routes: MockRoute[] = [
   {
     method: "post",
     pattern: /^\/wishlist\/?$/,
-    handler: ({ db, me, body }) => {
+    handler: ({ db, me, body, headers }) => {
       const pid = Number(body.product_id);
       const p = db.products.find((pp) => pp.id === pid);
       if (!p) fail(404, { detail: "Not found." });
-      const key = String(ownerKey(me));
+      const key = String(ownerKey(me, headers));
       const ids = db.wishes[key] ?? [];
       if (!ids.includes(pid)) ids.push(pid);
       db.wishes[key] = ids;
@@ -962,8 +973,8 @@ const routes: MockRoute[] = [
   {
     method: "delete",
     pattern: /^\/wishlist\/(\d+)\/?$/,
-    handler: ({ db, me }, m) => {
-      const key = String(ownerKey(me));
+    handler: ({ db, me, headers }, m) => {
+      const key = String(ownerKey(me, headers));
       db.wishes[key] = (db.wishes[key] ?? []).filter((pid) => pid !== Number(m[1]));
       saveDB();
       return ok(204, null);
@@ -979,8 +990,8 @@ const routes: MockRoute[] = [
   {
     method: "post",
     pattern: /^\/checkout\/validate\/?$/,
-    handler: ({ db, me, body }) => {
-      const cart = getCart(db, me);
+    handler: ({ db, me, body, headers }) => {
+      const cart = getCart(db, me, headers);
       const errors: { sku: string; message: string }[] = [];
       for (const item of cart.items) {
         if (item.quantity > item.available_stock) {
@@ -995,8 +1006,8 @@ const routes: MockRoute[] = [
   {
     method: "post",
     pattern: /^\/checkout\/coupon\/?$/,
-    handler: ({ db, me, body }) => {
-      const cart = getCart(db, me);
+    handler: ({ db, me, body, headers }) => {
+      const cart = getCart(db, me, headers);
       const subtotalC = Math.round(parseFloat(cart.subtotal) * 100);
       return ok(200, validateCoupon(db, String(body.code ?? ""), subtotalC));
     },
@@ -1004,7 +1015,7 @@ const routes: MockRoute[] = [
   {
     method: "post",
     pattern: /^\/checkout\/place-order\/?$/,
-    handler: ({ db, me, body }) => {
+    handler: ({ db, me, body, headers }) => {
       const card = String((body.payment as { last4?: string } | undefined)?.last4 ?? "");
       if (String((body.payment as { number?: string } | undefined)?.number ?? "").replace(/\s/g, "") === "4242424242424444") {
         fail(402, { detail: "Your card was declined. Try 4242 4242 4242 4242." });
@@ -1016,7 +1027,8 @@ const routes: MockRoute[] = [
       const order = buildOrder(
         db,
         me,
-        body as Parameters<typeof buildOrder>[2]
+        body as Parameters<typeof buildOrder>[2],
+        headers
       );
       return ok(201, order);
     },

@@ -1073,7 +1073,7 @@ export function seedDB(): {
     newsletter: ["early@list.test", "field@notes.test"],
     settings: {
       store_name: "Studio",
-      currency: "USD",
+      currency: "PHP",
       tax_rate: 0.08,
       shipping_flat_rate: "12.00",
       free_shipping_threshold: "150.00",

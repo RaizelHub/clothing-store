@@ -167,7 +167,7 @@ export function MobileNav() {
           )}
 
           <div className="pt-2 flex items-center justify-between text-[10px] text-stone-400 uppercase tracking-widest">
-            <span>Currency: USD ($)</span>
+            <span>Currency: PHP (₱)</span>
             <span>Studio Atelier</span>
           </div>
         </div>

@@ -132,7 +132,11 @@ export function ProductCard({ product }: { product: ProductSummary }) {
           aria-pressed={wished}
           onClick={(e) => {
             e.preventDefault();
-            wished ? remove.mutate(product.id) : add.mutate(product.id);
+            if (wished) {
+              remove.mutate(product.id);
+            } else {
+              add.mutate(product.id);
+            }
           }}
           className={cn(
             "absolute right-3 top-3 z-10 flex size-8 items-center justify-center rounded-full backdrop-blur-md transition-all duration-300",
@@ -175,7 +179,11 @@ export function ProductCard({ product }: { product: ProductSummary }) {
               ) : (
                 <div className="grid grid-cols-5 gap-1">
                   {(fullProduct?.sizes ?? product.sizes).map((size) => {
-                    const variant = fullProduct?.variants.find((v) => v.size.id === size.id);
+                    const targetColorId = activeColorId ?? fullProduct?.colors[0]?.id;
+                    const variant = fullProduct
+                      ? fullProduct.variants.find((v) => v.size.id === size.id && (targetColorId ? v.color.id === targetColorId : true)) ??
+                        fullProduct.variants.find((v) => v.size.id === size.id)
+                      : undefined;
                     const isAvailable = variant ? variant.stock > 0 : true;
                     const isAdding = addingSizeId === size.id;
 

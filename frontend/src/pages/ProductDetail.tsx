@@ -62,7 +62,7 @@ export function ProductDetailPage() {
       offers: {
         "@type": "Offer",
         price: product.price_effective,
-        priceCurrency: "USD",
+        priceCurrency: "PHP",
         availability: product.variants.some((v) => v.stock > 0)
           ? "https://schema.org/InStock"
           : "https://schema.org/OutOfStock",
@@ -266,7 +266,7 @@ export function ProductDetailPage() {
                   },
                   {
                     title: "Complimentary Delivery & Returns",
-                    body: "Complimentary worldwide express courier delivery on orders over $150. Pre-paid return labels included in all parcels.",
+                    body: "Complimentary express courier delivery on qualifying orders. Pre-paid return labels included in all parcels.",
                   },
                 ]}
               />

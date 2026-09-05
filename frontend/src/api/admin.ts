@@ -78,6 +78,12 @@ export interface VariantInput {
   stock: number;
 }
 
+export interface ProductImageInput {
+  image: string;
+  alt?: string;
+  color_id?: number | null;
+}
+
 export interface ProductInput {
   name: string;
   tagline?: string;
@@ -91,6 +97,7 @@ export interface ProductInput {
   is_new?: boolean;
   variants: VariantInput[];
   colors: { color_id: number; hex: string }[];
+  images?: ProductImageInput[];
 }
 
 export async function createAdminProduct(payload: ProductInput): Promise<AdminProduct> {

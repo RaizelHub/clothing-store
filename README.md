@@ -1,79 +1,135 @@
-# Clothing Store — Phase 1: Project Foundation
+# Studio Clothing Store
 
-Monorepo layout:
+A full-stack clothing storefront with a React + TypeScript frontend and a Django REST Framework backend.
 
-```
-clothing-store/
-├── frontend/   React + TypeScript + Vite
-└── backend/    Django + DRF + PostgreSQL
-```
+The current app includes:
 
-## What's in Phase 1
+- Product catalog, search, filters, collections, product variants, and reviews
+- Cart, wishlist, coupons, shipping quotes, checkout, and order history
+- Registration, JWT login, profile management, addresses, and password reset demo flows
+- Admin dashboard, products, inventory, orders, customers, collections, discounts, reviews, and store settings
+- A browser-local mock API for frontend-only demos
 
-- Frontend scaffold: Vite, TS, Tailwind (editorial design tokens), TanStack
-  Query, Zustand, routing, navbar (desktop + mobile) matching the agreed nav spec.
-- Backend scaffold: Django project with split settings (`base` / `development`
-  / `production`), DRF installed, CORS configured, Postgres via `DATABASE_URL`.
-- A `/api/health/` endpoint the homepage calls on load, to prove the full
-  chain (React → Vite proxy → Django → response) works before we build
-  anything real on top of it.
-- `.env.example` in both folders — copy to `.env` and fill in.
+## Quick start on Windows
 
-## Setup
+The repository is already configured with a seeded SQLite development database.
 
-### 1. PostgreSQL
+From this folder, run:
 
-Create a local database (adjust to taste):
-
-```bash
-createdb clothing_store
+```powershell
+.\start.ps1
 ```
 
-### 2. Backend
+Then open <http://127.0.0.1:5173>. Press `Ctrl+C` in the terminal to stop both servers.
 
-```bash
+The default `frontend/.env` uses the real Django API. To run the entire UI without Django data, use:
+
+```powershell
+.\start.ps1 -Mocks
+```
+
+## Demo accounts
+
+These credentials are development fixtures only:
+
+| Access | Email | Password |
+| --- | --- | --- |
+| Admin | `admin@studio.test` | `admin12345` |
+| Customer | `elena@example.com` | `password123` |
+
+Admin screens are available at <http://127.0.0.1:5173/admin> after signing in with the admin account.
+
+## First-time setup
+
+Requirements:
+
+- Python 3.10 or newer
+- Node.js 20 or newer
+
+Set up Django:
+
+```powershell
 cd backend
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-
-cp .env.example .env
-# edit .env: set DJANGO_SECRET_KEY and DATABASE_URL
-
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
 python manage.py migrate
-python manage.py runserver      # http://localhost:8000
+python manage.py seed
+cd ..
 ```
 
-### 3. Frontend
+Set up React:
 
-```bash
+```powershell
 cd frontend
 npm install
-cp .env.example .env            # leave VITE_API_URL blank for dev (proxy handles it)
-npm run dev                     # http://localhost:5173
+Copy-Item .env.example .env
+cd ..
 ```
 
-Open http://localhost:5173 — you should see "API connected — clothing-store-api (ok)"
-under the hero text. If it says "API unreachable", confirm Django is running
-on port 8000 and CORS_ALLOWED_ORIGINS in backend `.env` includes
-`http://localhost:5173`.
+For the real local API, make sure `frontend/.env` contains:
 
-## Why this structure
+```dotenv
+VITE_USE_MOCKS=false
+```
 
-- **Split Django settings** (`base.py` shared, `development.py`/`production.py`
-  thin overrides) avoids the classic "one settings.py with `if DEBUG` scattered
-  everywhere" mess once we add Cloudinary, Stripe/PayMongo, and Sentry in later phases.
-- **`apps/` namespace package** for Django apps keeps `accounts`, `products`,
-  `orders`, etc. from cluttering the project root as the app grows — this is
-  the pattern real Django e-commerce codebases converge on.
-- **Vite dev proxy for `/api`** means the frontend never hardcodes `localhost:8000`
-  — same code path works in dev and prod, only `VITE_API_URL` changes.
-- **Zustand for UI-only state / TanStack Query for server state** — this
-  split is set up now (see `store/useUIStore.ts`) so cart, wishlist, and auth
-  state in later phases follow the same pattern instead of one giant store.
+The backend defaults to SQLite when `DATABASE_URL` is empty. PostgreSQL can be used by setting a PostgreSQL `DATABASE_URL` in `backend/.env`.
 
-## Next: Phase 2 — Authentication
+## Run each service separately
 
-Custom user model (email as username), JWT via `djangorestframework-simplejwt`,
-registration, login/logout, refresh flow, forgot password, email verification,
-protected routes on the frontend, and the customer profile page.
+Backend terminal:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe manage.py runserver
+```
+
+Frontend terminal:
+
+```powershell
+cd frontend
+npm run dev
+```
+
+The Vite development server proxies `/api` requests to Django on port 8000.
+
+## Verification & Quality Assurance
+
+Run the automated test suite and deployment audits:
+
+```powershell
+# Backend automated tests (13 tests covering guest isolation, concurrency, auth):
+cd backend
+.\.venv\Scripts\python.exe manage.py test
+
+# Django production settings & security check:
+.\.venv\Scripts\python.exe manage.py check --deploy --settings=config.settings.production
+
+# Frontend type analysis, linting, and optimized production build:
+cd ..\frontend
+npm run lint
+npm run build
+```
+
+## Production & Container Deployment
+
+### Docker Compose
+Run the entire production stack (PostgreSQL + Django API + Nginx SPA) with:
+
+```powershell
+docker compose up -d --build
+```
+
+### PaaS Deployment (Render / Railway / Heroku)
+- **Backend**: Uses `backend/Procfile` with Gunicorn and automatic `release: python manage.py migrate --no-input`.
+- **Static files**: Handled natively by WhiteNoise with compressed manifest storage (`collectstatic`).
+- **Frontend**: Served with Nginx or static hosting (Vercel / Cloudflare Pages) with SPA routing fallback.
+
+Useful URLs:
+
+- Storefront: <http://127.0.0.1:5173>
+- API health: <http://127.0.0.1:8000/api/health/>
+- Django admin: <http://127.0.0.1:8000/admin/>
+
+Do not use the included secret key, SQLite database, fixture passwords, or simulated payment/email flows in production.

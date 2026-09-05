@@ -17,6 +17,8 @@ export async function cancelOrder(order_number: string): Promise<Order> {
 }
 
 export interface PlaceOrderPayload {
+  customer_email?: string;
+  customer_name?: string;
   shipping_address: OrderAddress;
   billing_address: OrderAddress;
   billing_same_as_shipping: boolean;

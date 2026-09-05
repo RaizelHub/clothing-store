@@ -61,7 +61,7 @@ export function Navbar() {
             <span>Autumn / Winter Capsule 01</span>
           </div>
           <div className="mx-auto sm:mx-0 flex items-center gap-4">
-            <span className="font-medium text-paper tracking-wider">Complimentary express shipping on orders over $150</span>
+            <span className="font-medium text-paper tracking-wider">Complimentary express shipping on orders over ₱5,000</span>
           </div>
           <div className="hidden md:flex items-center gap-3 text-paper/60">
             <span>Worldwide Atelier Delivery</span>

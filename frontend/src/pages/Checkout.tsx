@@ -29,7 +29,8 @@ export function CheckoutPage() {
 
   const [step, setStep] = useState<Step>("contact");
   const [guestEmail, setGuestEmail] = useState("");
-  const [guestEmailValid, setGuestEmailValid] = useState(false);
+  const [guestEmailTouched, setGuestEmailTouched] = useState(false);
+  const guestEmailValid = useMemo(() => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(guestEmail.trim()), [guestEmail]);
   const [sameAsShipping, setSameAsShipping] = useState(true);
   const [billing, setBilling] = useState<ShippingInput | null>(null);
   const [method, setMethod] = useState("standard");
@@ -46,9 +47,12 @@ export function CheckoutPage() {
 
   const shippingForm = useForm<ShippingInput>({
     resolver: zodResolver(shippingSchema),
-    defaultValues: { recipient: "", line1: "", line2: "", city: "", state: "", postal_code: "", country: "", phone: "" },
+    defaultValues: { recipient: "", line1: "", line2: "", city: "", state: "", postal_code: "", country: "Philippines", phone: "" },
   });
-  const cardForm = useForm<CardInput>({ resolver: zodResolver(cardSchema) });
+  const cardForm = useForm<CardInput>({
+    resolver: zodResolver(cardSchema),
+    defaultValues: { name: "", number: "", expiry: "", cvc: "" },
+  });
   const couponForm = useForm<CouponInput>({ resolver: zodResolver(couponSchema) });
   const couponCode = useDebouncedValue(couponInputCode, 400);
   const skipCouponCheck = couponCode.trim().length < 3;
@@ -82,17 +86,18 @@ export function CheckoutPage() {
     [cart, quote, method, coupon]
   );
 
-  const guestEmailDebounced = useDebouncedValue(guestEmail, 300);
-  useEffect(() => {
-    setGuestEmailValid(/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(guestEmailDebounced));
-  }, [guestEmailDebounced]);
+
 
   const place = useMutation({
     mutationFn: () => {
       if (!cart || !cart.items.length) throw new Error("Bag is empty.");
       const card = cardForm.getValues();
       const address = shippingForm.getValues();
+      const email = me?.email ?? guestEmail;
+      const name = me ? `${me.first_name} ${me.last_name}`.trim() || address.recipient : address.recipient;
       return placeOrder({
+        customer_email: email,
+        customer_name: name,
         shipping_address: address,
         billing_address: sameAsShipping ? address : billing ?? address,
         billing_same_as_shipping: sameAsShipping,
@@ -155,8 +160,18 @@ export function CheckoutPage() {
               <div>
                 <h2 className="font-display text-2xl">Contact</h2>
                 <div className="mt-4 max-w-sm">
-                  <Field label="Email" error={guestEmailValid ? undefined : "Enter a valid email for order updates."} hint="Order confirmation goes here. Guests checkout without an account.">
-                    <Input type="email" value={guestEmail} onChange={(e) => setGuestEmail(e.target.value)} placeholder="you@example.com" />
+                  <Field
+                    label="Email"
+                    error={(guestEmailTouched || guestEmail.length > 0) && !guestEmailValid ? "Enter a valid email for order updates." : undefined}
+                    hint="Order confirmation goes here. Guests checkout without an account."
+                  >
+                    <Input
+                      type="email"
+                      value={guestEmail}
+                      onChange={(e) => setGuestEmail(e.target.value)}
+                      onBlur={() => setGuestEmailTouched(true)}
+                      placeholder="you@example.com"
+                    />
                   </Field>
                 </div>
               </div>
@@ -245,15 +260,15 @@ export function CheckoutPage() {
               </Link>
               <Button
                 size="lg"
-                onClick={() => {
-                  shippingForm.trigger().then((valid) => {
-                    if (valid) {
-                      setStep("payment");
-                      window.scrollTo({ top: 0, behavior: "smooth" });
-                    }
-                  });
+                onClick={async () => {
+                  setGuestEmailTouched(true);
+                  if (!me && !guestEmailValid) return;
+                  const valid = await shippingForm.trigger();
+                  if (valid) {
+                    setStep("payment");
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }
                 }}
-                disabled={!contactComplete}
               >
                 Continue to payment
               </Button>

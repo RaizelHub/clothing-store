@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { NavLink, Outlet, Link } from "react-router-dom";
 import { useLogout } from "@/hooks/auth";
 import { cn } from "@/lib/utils";
@@ -71,7 +72,9 @@ export function AdminLayout() {
       </nav>
 
       <main className="min-w-0 flex-1 p-6 md:p-10">
-        <Outlet />
+        <Suspense fallback={<div className="flex h-48 items-center justify-center"><div className="h-6 w-6 animate-spin rounded-full border-2 border-stone-300 border-t-ink" /></div>}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   );

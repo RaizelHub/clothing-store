@@ -1,3 +1,4 @@
+import { lazy } from "react";
 import { createBrowserRouter } from "react-router-dom";
 import { RootLayout } from "@/components/layout/RootLayout";
 import { Placeholder } from "@/pages/Placeholder";
@@ -7,34 +8,36 @@ import { Collections, CollectionPage } from "@/pages/Collections";
 import { SearchPage } from "@/pages/SearchPage";
 import { ProductDetailPage } from "@/pages/ProductDetail";
 import { WishlistPage } from "@/pages/Wishlist";
-import { CheckoutPage } from "@/pages/Checkout";
-import { CheckoutSuccessPage } from "@/pages/CheckoutSuccess";
 
-import { LoginPage } from "@/pages/auth/Login";
-import { RegisterPage } from "@/pages/auth/Register";
-import { ForgotPasswordPage } from "@/pages/auth/ForgotPassword";
-import { ResetPasswordPage } from "@/pages/auth/ResetPassword";
-import { VerifyEmailPage } from "@/pages/auth/VerifyEmail";
+// Route-level code splitting for heavy & protected sections
+const CheckoutPage = lazy(() => import("@/pages/Checkout").then((m) => ({ default: m.CheckoutPage })));
+const CheckoutSuccessPage = lazy(() => import("@/pages/CheckoutSuccess").then((m) => ({ default: m.CheckoutSuccessPage })));
 
-import { AccountLayout } from "@/pages/account/AccountLayout";
-import { ProfilePage } from "@/pages/account/Profile";
-import { OrdersPage } from "@/pages/account/Orders";
-import { OrderDetailPage } from "@/pages/account/OrderDetail";
-import { AddressesPage } from "@/pages/account/Addresses";
+const LoginPage = lazy(() => import("@/pages/auth/Login").then((m) => ({ default: m.LoginPage })));
+const RegisterPage = lazy(() => import("@/pages/auth/Register").then((m) => ({ default: m.RegisterPage })));
+const ForgotPasswordPage = lazy(() => import("@/pages/auth/ForgotPassword").then((m) => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage = lazy(() => import("@/pages/auth/ResetPassword").then((m) => ({ default: m.ResetPasswordPage })));
+const VerifyEmailPage = lazy(() => import("@/pages/auth/VerifyEmail").then((m) => ({ default: m.VerifyEmailPage })));
 
-import { AdminLayout } from "@/pages/admin/AdminLayout";
-import { Dashboard } from "@/pages/admin/Dashboard";
-import { AdminOrders } from "@/pages/admin/AdminOrders";
-import { AdminOrderDetail } from "@/pages/admin/AdminOrderDetail";
-import { AdminCustomers } from "@/pages/admin/AdminCustomers";
-import { AdminCustomerDetail } from "@/pages/admin/AdminCustomerDetail";
-import { AdminProducts } from "@/pages/admin/AdminProducts";
-import { ProductEditor } from "@/pages/admin/ProductEditor";
-import { InventoryPage } from "@/pages/admin/Inventory";
-import { AdminCollections } from "@/pages/admin/AdminCollections";
-import { AdminDiscounts } from "@/pages/admin/AdminDiscounts";
-import { AdminReviews } from "@/pages/admin/AdminReviews";
-import { AdminSettings } from "@/pages/admin/AdminSettings";
+const AccountLayout = lazy(() => import("@/pages/account/AccountLayout").then((m) => ({ default: m.AccountLayout })));
+const ProfilePage = lazy(() => import("@/pages/account/Profile").then((m) => ({ default: m.ProfilePage })));
+const OrdersPage = lazy(() => import("@/pages/account/Orders").then((m) => ({ default: m.OrdersPage })));
+const OrderDetailPage = lazy(() => import("@/pages/account/OrderDetail").then((m) => ({ default: m.OrderDetailPage })));
+const AddressesPage = lazy(() => import("@/pages/account/Addresses").then((m) => ({ default: m.AddressesPage })));
+
+const AdminLayout = lazy(() => import("@/pages/admin/AdminLayout").then((m) => ({ default: m.AdminLayout })));
+const Dashboard = lazy(() => import("@/pages/admin/Dashboard").then((m) => ({ default: m.Dashboard })));
+const AdminOrders = lazy(() => import("@/pages/admin/AdminOrders").then((m) => ({ default: m.AdminOrders })));
+const AdminOrderDetail = lazy(() => import("@/pages/admin/AdminOrderDetail").then((m) => ({ default: m.AdminOrderDetail })));
+const AdminCustomers = lazy(() => import("@/pages/admin/AdminCustomers").then((m) => ({ default: m.AdminCustomers })));
+const AdminCustomerDetail = lazy(() => import("@/pages/admin/AdminCustomerDetail").then((m) => ({ default: m.AdminCustomerDetail })));
+const AdminProducts = lazy(() => import("@/pages/admin/AdminProducts").then((m) => ({ default: m.AdminProducts })));
+const ProductEditor = lazy(() => import("@/pages/admin/ProductEditor").then((m) => ({ default: m.ProductEditor })));
+const InventoryPage = lazy(() => import("@/pages/admin/Inventory").then((m) => ({ default: m.InventoryPage })));
+const AdminCollections = lazy(() => import("@/pages/admin/AdminCollections").then((m) => ({ default: m.AdminCollections })));
+const AdminDiscounts = lazy(() => import("@/pages/admin/AdminDiscounts").then((m) => ({ default: m.AdminDiscounts })));
+const AdminReviews = lazy(() => import("@/pages/admin/AdminReviews").then((m) => ({ default: m.AdminReviews })));
+const AdminSettings = lazy(() => import("@/pages/admin/AdminSettings").then((m) => ({ default: m.AdminSettings })));
 
 import { RequireAuth, RequireGuest, RequireAdmin } from "@/routes/guards";
 

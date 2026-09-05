@@ -1,13 +1,14 @@
+import re
 from datetime import timedelta
 from decimal import Decimal
 
-from django.db.models import Count, DecimalField, F, Sum
-
+from django.db import transaction
+from django.db.models import Count, DecimalField, F, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.exceptions import AuthenticationFailed, NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
@@ -30,7 +31,16 @@ from .serializers import (
     validate_coupon,
 )
 
-GUEST_KEY = "guest"
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _guest_key_from_request(request) -> str:
+    session_id = request.headers.get("x-guest-session-id") or request.META.get("HTTP_X_GUEST_SESSION_ID")
+    if session_id:
+        cleaned = re.sub(r"[^a-zA-Z0-9_-]", "", str(session_id))[:56]
+        if cleaned:
+            return f"guest:{cleaned}"
+    return "guest:default"
 
 
 def _owner(request):
@@ -38,7 +48,7 @@ def _owner(request):
     user = request.user
     if user and user.is_authenticated:
         return user, None
-    return None, GUEST_KEY
+    return None, _guest_key_from_request(request)
 
 
 def _cart(request):
@@ -51,7 +61,7 @@ def _cart(request):
 
 
 def _cart_data(cart: Cart) -> dict:
-    items = cart.items.select_related("variant__product", "variant__color", "variant__size").all()
+    items = cart.items.select_related("variant__product", "variant__color", "variant__size").prefetch_related("variant__product__images").all()
     serialized = CartItemSerializer(items, many=True).data
     subtotal_cents = sum(to_cents(i["unit_price"]) * i["quantity"] for i in serialized)
     return {
@@ -61,10 +71,15 @@ def _cart_data(cart: Cart) -> dict:
     }
 
 
-def _require_staff(request):
+def _require_auth(request):
     user = request.user
     if not user or not user.is_authenticated:
-        raise PermissionDenied("Authentication credentials were not provided.")
+        raise AuthenticationFailed("Authentication credentials were not provided.")
+    return user
+
+
+def _require_staff(request):
+    user = _require_auth(request)
     if not user.is_staff:
         raise PermissionDenied("Staff only.")
     return user
@@ -125,19 +140,22 @@ def cart_item_detail(request, pk):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def cart_merge(request):
-    user, _ = _owner(request)
-    if not user:
-        raise PermissionDenied("Authentication credentials were not provided.")
-    guest, _ = Cart.objects.get_or_create(owner_key=GUEST_KEY)
+    user = _require_auth(request)
+    guest_key = _guest_key_from_request(request)
+    guest = Cart.objects.filter(owner_key=guest_key).first()
+    if not guest and guest_key != "guest":
+        guest = Cart.objects.filter(owner_key="guest").first()
     mine, _ = Cart.objects.get_or_create(user=user)
-    for g in guest.items.all():
-        existing = mine.items.filter(variant=g.variant).first()
-        if existing:
-            existing.quantity = min(existing.quantity + g.quantity, 99)
-            existing.save(update_fields=["quantity"])
-        else:
-            mine.items.add(g)
-    guest.items.all().delete()
+    if guest:
+        for g in guest.items.all():
+            existing = mine.items.filter(variant=g.variant).first()
+            if existing:
+                existing.quantity = min(existing.quantity + g.quantity, 99)
+                existing.save(update_fields=["quantity"])
+            else:
+                mine.items.add(g)
+        guest.items.all().delete()
+        guest.delete()
     return Response(_cart_data(mine))
 
 
@@ -227,6 +245,7 @@ def _address_from_payload(payload: dict) -> dict:
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@transaction.atomic
 def place_order(request):
     body = request.data
     payment = body.get("payment") or {}
@@ -241,6 +260,18 @@ def place_order(request):
     items = list(cart.items.select_related("variant__product", "variant__color", "variant__size").all())
     if not items:
         raise ValidationError({"detail": "Cart is empty."})
+
+    # Concurrency Lock: Lock all variants to prevent overselling race conditions
+    variant_ids = [item.variant_id for item in items]
+    locked_variants = {
+        v.id: v for v in ProductVariant.objects.select_for_update().filter(id__in=variant_ids)
+    }
+    for item in items:
+        v = locked_variants.get(item.variant_id)
+        if not v:
+            raise ValidationError({"detail": f"Variant {item.variant_id} is no longer available."})
+        if v.stock < item.quantity:
+            raise ValidationError({"stock": [f"Only {v.stock} available for {v.sku}."]})
 
     subtotal_c = _cart_subtotal_cents(cart)
     coupon = validate_coupon(body.get("coupon_code"), subtotal_c)
@@ -258,11 +289,20 @@ def place_order(request):
     billing_address = shipping_address if billing_same else _address_from_payload(body.get("billing_address") or {})
     now = timezone.now()
 
+    raw_email = body.get("customer_email") or (user.email if user else "")
+    customer_email = str(raw_email).strip().lower()
+    if not EMAIL_RE.match(customer_email):
+        raise ValidationError({"customer_email": ["A valid email address is required for order confirmation."]})
+    customer_name = str(
+        body.get("customer_name")
+        or (f"{user.first_name} {user.last_name}".strip() if user else shipping_address.get("recipient") or "")
+    ).strip()
+
     order = Order.objects.create(
         order_number=_next_order_number(),
         user=user,
-        customer_email=user.email if user else (shipping_address.get("recipient") or ""),
-        customer_name=(f"{user.first_name} {user.last_name}".strip() if user else shipping_address.get("recipient") or ""),
+        customer_email=customer_email,
+        customer_name=customer_name,
         status=Order.STATUS_PAID,
         subtotal=from_cents(subtotal_c),
         shipping=from_cents(shipping_c),
@@ -281,7 +321,7 @@ def place_order(request):
         ],
     )
     for item in items:
-        v = item.variant
+        v = locked_variants[item.variant_id]
         img = v.product.images.filter(color=v.color).first() or v.product.images.first()
         OrderItem.objects.create(
             order=order,
@@ -294,9 +334,9 @@ def place_order(request):
             quantity=item.quantity,
             image=img.image if img else "",
         )
-        ProductVariant.objects.filter(pk=v.pk).update(stock=max(0, v.stock - item.quantity))
+        ProductVariant.objects.filter(pk=v.pk).update(stock=F("stock") - item.quantity)
     if order.coupon:
-        Coupon.objects.filter(pk=order.coupon.pk).update(uses=order.coupon.uses + 1)
+        Coupon.objects.filter(pk=order.coupon.pk).update(uses=F("uses") + 1)
     cart.items.all().delete()
     return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
@@ -312,13 +352,6 @@ def _customer_order_or_404(request, order_number):
     return order
 
 
-def _require_auth(request):
-    user = request.user
-    if not user or not user.is_authenticated:
-        raise PermissionDenied("Authentication credentials were not provided.")
-    return user
-
-
 @api_view(["GET"])
 def my_orders(request):
     _require_auth(request)
@@ -332,6 +365,7 @@ def my_order(request, order_number):
 
 
 @api_view(["POST"])
+@transaction.atomic
 def cancel_order(request, order_number):
     order = _customer_order_or_404(request, order_number)
     if order.status not in (Order.STATUS_PENDING, Order.STATUS_PAID):
@@ -339,6 +373,15 @@ def cancel_order(request, order_number):
     order.status = Order.STATUS_CANCELLED
     order.timeline = [*order.timeline, {"status": "cancelled", "at": timezone.now().isoformat(), "note": "Cancelled by customer"}]
     order.save(update_fields=["status", "timeline"])
+
+    # Restore inventory stock for cancelled items
+    for item in order.items.all():
+        ProductVariant.objects.filter(product=item.product, sku=item.sku).update(stock=F("stock") + item.quantity)
+
+    # Decrement coupon uses if applicable
+    if order.coupon:
+        Coupon.objects.filter(pk=order.coupon.pk, uses__gt=0).update(uses=F("uses") - 1)
+
     return Response(OrderSerializer(order).data)
 
 
@@ -461,13 +504,27 @@ def admin_customer_list(request):
     _require_staff(request)
     from django.contrib.auth import get_user_model
 
-    users = get_user_model().objects.filter(is_staff=False).annotate(order_count=Count("orders"))
-    out = []
-    for u in users:
-        spent = Decimal("0.00")
-        for o in u.orders.filter(status__in=["paid", "processing", "shipped", "delivered"]):
-            spent += o.total
-        out.append({**UserSerializer(u).data, "order_count": u.order_count, "total_spent": cents_to_str(to_cents(spent))})
+    paid_statuses = [Order.STATUS_PAID, Order.STATUS_PROCESSING, Order.STATUS_SHIPPED, Order.STATUS_DELIVERED]
+    users = (
+        get_user_model()
+        .objects.filter(is_staff=False)
+        .annotate(
+            order_count=Count("orders", filter=Q(orders__status__in=paid_statuses), distinct=True),
+            total_spent=Coalesce(
+                Sum("orders__total", filter=Q(orders__status__in=paid_statuses)),
+                Decimal("0.00"),
+                output_field=DecimalField(max_digits=10, decimal_places=2),
+            ),
+        )
+    )
+    out = [
+        {
+            **UserSerializer(u).data,
+            "order_count": u.order_count,
+            "total_spent": cents_to_str(to_cents(u.total_spent)),
+        }
+        for u in users
+    ]
     return Response(out)
 
 
@@ -476,13 +533,14 @@ def admin_customer_detail(request, pk):
     _require_staff(request)
     from django.contrib.auth import get_user_model
 
-    u = get_user_model().objects.filter(pk=pk, is_staff=False).first()
+    u = get_user_model().objects.filter(pk=pk, is_staff=False).prefetch_related("addresses").first()
     if not u:
         raise NotFound("Not found.")
-    spent = Decimal("0.00")
+    paid_statuses = [Order.STATUS_PAID, Order.STATUS_PROCESSING, Order.STATUS_SHIPPED, Order.STATUS_DELIVERED]
     orders = Order.objects.filter(user=u).prefetch_related("items").all()
-    for o in orders.filter(status__in=["paid", "processing", "shipped", "delivered"]):
-        spent += o.total
+    spent = orders.filter(status__in=paid_statuses).aggregate(
+        t=Coalesce(Sum("total"), Decimal("0.00"), output_field=DecimalField(max_digits=10, decimal_places=2))
+    )["t"]
     data = {
         **UserSerializer(u).data,
         "order_count": orders.count(),

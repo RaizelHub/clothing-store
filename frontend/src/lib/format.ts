@@ -1,10 +1,10 @@
 // Prices arrive as decimal strings (DRF DecimalField). Format for display.
-export function formatMoney(value: string | number): string {
+export function formatMoney(value: string | number, currency = "PHP"): string {
   const n = typeof value === "string" ? parseFloat(value) : value;
   if (Number.isNaN(n)) return "—";
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("en-PH", {
     style: "currency",
-    currency: "USD",
+    currency: currency,
   }).format(n);
 }
 

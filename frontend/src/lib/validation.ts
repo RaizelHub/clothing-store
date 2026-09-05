@@ -68,7 +68,7 @@ export const shippingSchema = z.object({
   city: z.string().trim().min(1, "City is required."),
   state: z.string().trim().default(""),
   postal_code: z.string().trim().min(1, "Postal code is required."),
-  country: z.string().trim().default("US"),
+  country: z.string().trim().min(1, "Country is required.").default("Philippines"),
   phone: z.string().trim().min(6, "Phone number is required."),
 });
 export type ShippingInput = z.infer<typeof shippingSchema>;

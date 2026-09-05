@@ -156,15 +156,15 @@ export function AdminDiscounts() {
             <Field label="Type">
               <Select value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value as Draft["type"] })}>
                 <option value="percent">Percent (%)</option>
-                <option value="fixed">Fixed amount</option>
+                <option value="fixed">Fixed amount (PHP / ₱)</option>
               </Select>
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Field label={draft.type === "percent" ? "Value (%)" : "Value (currency)"}>
+            <Field label={draft.type === "percent" ? "Value (%)" : "Value (PHP / ₱)"}>
               <Input type="number" min="0" step="0.01" value={draft.value} onChange={(e) => setDraft({ ...draft, value: e.target.value })} />
             </Field>
-            <Field label="Minimum order">
+            <Field label="Minimum order (PHP / ₱)">
               <Input type="number" min="0" step="0.01" value={draft.min} onChange={(e) => setDraft({ ...draft, min: e.target.value })} />
             </Field>
           </div>

@@ -7,7 +7,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.exceptions import AuthenticationFailed, NotFound, PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -66,7 +66,7 @@ def product_qs():
 def _require_staff(request):
     user = request.user
     if not user or not user.is_authenticated:
-        raise PermissionDenied("Authentication credentials were not provided.")
+        raise AuthenticationFailed("Authentication credentials were not provided.")
     if not user.is_staff:
         raise PermissionDenied("Staff only.")
     return user
@@ -197,7 +197,7 @@ def product_reviews(request, slug):
         return Response(ReviewSerializer(reviews, many=True).data)
     user = request.user
     if not user or not user.is_authenticated:
-        raise ValidationError({"detail": "Authentication credentials were not provided."})
+        raise AuthenticationFailed("Authentication credentials were not provided.")
     rating = request.data.get("rating")
     comment = request.data.get("comment", "")
     try:
@@ -258,23 +258,55 @@ def _apply_admin_input(product: Product, data: dict) -> None:
             Color.objects.filter(pk=item["color_id"]).update(hex=item["hex"])
 
     if "variants" in data:
-        product.variants.all().delete()
+        existing_variants = list(product.variants.all())
+        seen_variant_ids = set()
         for v in data["variants"]:
             color = Color.objects.filter(pk=v["color_id"]).first()
             size = Size.objects.filter(pk=v["size_id"]).first()
             if not color or not size:
                 raise ValidationError({"variants": ["Unknown color or size id."]})
             sku = v.get("sku") or f"STU-{color.name[:3].upper()}-{size.name}"
-            ProductVariant.objects.create(
-                product=product,
-                sku=sku,
-                color=color,
-                size=size,
-                price_override=from_cents(v["price_override_cents"]) if v.get("price_override_cents") is not None else None,
-                stock=int(v.get("stock", 0)),
-            )
+            price_override = from_cents(v["price_override_cents"]) if v.get("price_override_cents") is not None else None
+            stock = int(v.get("stock", 0))
 
-    if "colors" in data and product.images.count() == 0:
+            matched = next((ex for ex in existing_variants if ex.color_id == color.id and ex.size_id == size.id), None)
+            if matched:
+                matched.sku = sku
+                matched.price_override = price_override
+                matched.stock = stock
+                matched.save(update_fields=["sku", "price_override", "stock"])
+                seen_variant_ids.add(matched.id)
+            else:
+                created = ProductVariant.objects.create(
+                    product=product,
+                    sku=sku,
+                    color=color,
+                    size=size,
+                    price_override=price_override,
+                    stock=stock,
+                )
+                seen_variant_ids.add(created.id)
+
+        for old_v in existing_variants:
+            if old_v.id not in seen_variant_ids:
+                if CartItem.objects.filter(variant=old_v).exists():
+                    old_v.stock = 0
+                    old_v.save(update_fields=["stock"])
+                else:
+                    old_v.delete()
+
+    if "images" in data:
+        product.images.all().delete()
+        for pos, img_data in enumerate(data["images"]):
+            color = Color.objects.filter(pk=img_data["color_id"]).first() if img_data.get("color_id") else None
+            ProductImage.objects.create(
+                product=product,
+                image=img_data["image"],
+                alt=img_data.get("alt", "") or f"{product.name} image {pos + 1}",
+                color=color,
+                position=pos,
+            )
+    elif "colors" in data and product.images.count() == 0:
         colors_with_hex = [(Color.objects.get(pk=i["color_id"]), i["hex"]) for i in data["colors"]]
         _create_images_for_colors(product, colors_with_hex)
 
@@ -284,7 +316,7 @@ def admin_products_view(request):
     _require_staff(request)
     if request.method == "GET":
         q = request.query_params.get("q")
-        qs = product_qs().order_by("id")
+        qs = product_qs().prefetch_related("collections", "reviews").order_by("id")
         if q:
             qs = qs.filter(name__icontains=q)
         return Response([ProductDetailSerializer(p).data for p in qs])

@@ -677,7 +677,7 @@ class Command(BaseCommand):
             pk=1,
             defaults={
                 "store_name": "Studio",
-                "currency": "USD",
+                "currency": "PHP",
                 "tax_rate": Decimal("0.08"),
                 "shipping_flat_rate": Decimal("12.00"),
                 "free_shipping_threshold": Decimal("150.00"),

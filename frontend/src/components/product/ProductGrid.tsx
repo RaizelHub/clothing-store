@@ -22,10 +22,10 @@ interface PriceRange {
 
 const PRICE_RANGES: PriceRange[] = [
   { label: "All Prices" },
-  { label: "Under $100", max: 100 },
-  { label: "$100 – $250", min: 100, max: 250 },
-  { label: "$250 – $500", min: 250, max: 500 },
-  { label: "Over $500", min: 500 },
+  { label: "Under ₱100", max: 100 },
+  { label: "₱100 – ₱250", min: 100, max: 250 },
+  { label: "₱250 – ₱500", min: 250, max: 500 },
+  { label: "Over ₱500", min: 500 },
 ];
 
 export function SortSelect({ value, onChange }: { value: SortOption; onChange: (v: SortOption) => void }) {

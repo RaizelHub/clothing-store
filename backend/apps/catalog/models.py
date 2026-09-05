@@ -136,7 +136,7 @@ class StoreSettings(models.Model):
     """Singleton — a single row holds store-level configuration."""
 
     store_name = models.CharField(max_length=120, default="Studio")
-    currency = models.CharField(max_length=8, default="USD")
+    currency = models.CharField(max_length=8, default="PHP")
     tax_rate = models.DecimalField(max_digits=6, decimal_places=4, default="0.08")
     shipping_flat_rate = models.DecimalField(max_digits=8, decimal_places=2, default="12.00")
     free_shipping_threshold = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, default="150.00")

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { NavLink, Navigate, Outlet, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { LogOut, ShieldCheck, User, Package, MapPin, Heart } from "lucide-react";
@@ -95,7 +95,9 @@ export function AccountLayout() {
           </button>
         </nav>
         <div className="min-w-0 bg-paper border border-stone-200/80 p-6 sm:p-8">
-          <Outlet />
+          <Suspense fallback={<div className="flex h-32 items-center justify-center"><div className="h-6 w-6 animate-spin rounded-full border-2 border-stone-300 border-t-ink" /></div>}>
+            <Outlet />
+          </Suspense>
         </div>
       </div>
     </section>

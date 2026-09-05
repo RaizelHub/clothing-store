@@ -23,6 +23,20 @@ if (useMocks) {
 // A bare instance for refresh calls — no auth header, no interceptors.
 const refreshClient = axios.create({ baseURL });
 
+// --- Guest session token wiring ---------------------------------------------
+
+export function getGuestSessionId(): string {
+  const key = "studio_guest_session_id";
+  let id = typeof window !== "undefined" ? window.localStorage.getItem(key) : null;
+  if (!id) {
+    id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `guest-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(key, id);
+    }
+  }
+  return id;
+}
+
 // --- Auth token wiring -----------------------------------------------------
 
 apiClient.interceptors.request.use((config) => {
@@ -30,6 +44,7 @@ apiClient.interceptors.request.use((config) => {
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;
   }
+  config.headers["X-Guest-Session-ID"] = getGuestSessionId();
   return config;
 });
 

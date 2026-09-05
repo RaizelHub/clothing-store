@@ -27,11 +27,11 @@ class CartItemSerializer(serializers.ModelSerializer):
 
     def get_image(self, obj):
         v = obj.variant
-        img = v.product.images.filter(color=v.color).first()
-        if img:
-            return img.image
-        img = v.product.images.first()
-        return img.image if img else None
+        images = list(v.product.images.all())
+        for img in images:
+            if img.color_id == v.color_id:
+                return img.image
+        return images[0].image if images else None
 
     def get_unit_price(self, obj):
         return obj.variant.effective_price_str()

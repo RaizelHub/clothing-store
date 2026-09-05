@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import { forwardRef, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
 const control =
@@ -29,44 +29,44 @@ export function Field({ label, error, hint, optional, children }: FieldProps) {
   );
 }
 
-export function Input({ className, invalid, ...rest }: InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }) {
-  return <input className={cn(control, invalid && "border-accent", className)} {...rest} />;
-}
+export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }>(
+  ({ className, invalid, ...rest }, ref) => {
+    return <input ref={ref} className={cn(control, invalid && "border-accent", className)} {...rest} />;
+  }
+);
+Input.displayName = "Input";
 
-export function Textarea({
-  className,
-  invalid,
-  ...rest
-}: TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }) {
-  return <textarea className={cn(control, "min-h-28 resize-y", invalid && "border-accent", className)} {...rest} />;
-}
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }>(
+  ({ className, invalid, ...rest }, ref) => {
+    return <textarea ref={ref} className={cn(control, "min-h-28 resize-y", invalid && "border-accent", className)} {...rest} />;
+  }
+);
+Textarea.displayName = "Textarea";
 
-export function Select({
-  className,
-  invalid,
-  children,
-  ...rest
-}: SelectHTMLAttributes<HTMLSelectElement> & { invalid?: boolean }) {
-  return (
-    <select className={cn(control, "appearance-none pr-8", invalid && "border-accent", className)} {...rest}>
-      {children}
-    </select>
-  );
-}
+export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement> & { invalid?: boolean }>(
+  ({ className, invalid, children, ...rest }, ref) => {
+    return (
+      <select ref={ref} className={cn(control, "appearance-none pr-8", invalid && "border-accent", className)} {...rest}>
+        {children}
+      </select>
+    );
+  }
+);
+Select.displayName = "Select";
 
-export function Checkbox({
-  className,
-  label,
-  ...rest
-}: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
-  return (
-    <label className={cn("flex cursor-pointer items-start gap-2.5 text-sm text-ink/80", className)}>
-      <input
-        type="checkbox"
-        className="mt-0.5 size-4 shrink-0 accent-ink"
-        {...rest}
-      />
-      <span>{label}</span>
-    </label>
-  );
-}
+export const Checkbox = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { label: string }>(
+  ({ className, label, ...rest }, ref) => {
+    return (
+      <label className={cn("flex cursor-pointer items-start gap-2.5 text-sm text-ink/80", className)}>
+        <input
+          ref={ref}
+          type="checkbox"
+          className="mt-0.5 size-4 shrink-0 accent-ink"
+          {...rest}
+        />
+        <span>{label}</span>
+      </label>
+    );
+  }
+);
+Checkbox.displayName = "Checkbox";
