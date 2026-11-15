@@ -8,7 +8,9 @@ import { getApiErrorMessage } from "@/lib/errors";
 import { Check, ArrowRight } from "lucide-react";
 
 export function Footer() {
-  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(
+    null,
+  );
   const {
     register,
     handleSubmit,
@@ -27,24 +29,23 @@ export function Footer() {
   };
 
   return (
-    <footer className="mt-28 sm:mt-36 border-t border-stone-200/80 bg-paper">
+    <footer className="studio-footer mt-20 sm:mt-24 border-t border-stone-200/80">
       <div className="container-editorial py-16 sm:py-20">
         <div className="grid grid-cols-1 gap-12 sm:grid-cols-2 md:grid-cols-5 lg:gap-16">
           {/* Brand Philosophy */}
           <div className="md:col-span-2 space-y-4">
             <div className="flex flex-col">
-              <span className="font-display text-2xl font-normal tracking-[0.25em] text-ink">
-                STUDIO
-              </span>
+              <span className="footer-wordmark">studio</span>
               <span className="text-[9px] uppercase tracking-[0.35em] text-stone-400 -mt-1 font-sans">
                 Atelier
               </span>
             </div>
             <p className="text-xs leading-relaxed text-stone-600 max-w-sm">
-              An independent clothing atelier dedicated to noble materials, quiet precision, and non-seasonal design. Handcrafted with European fabrics.
+              Good clothes for whatever your day looks like. Find a favorite,
+              make it yours, wear it on repeat.
             </p>
             <div className="pt-2 text-[10px] uppercase tracking-widest text-stone-400">
-              Paris · Milan · New York · London
+              A wardrobe for living in.
             </div>
           </div>
 
@@ -61,58 +62,73 @@ export function Footer() {
               </li>
               <li>
                 <Link to="/women" className="transition-colors hover:text-ink">
-                  Women's Line
+                  For her
                 </Link>
               </li>
               <li>
                 <Link to="/men" className="transition-colors hover:text-ink">
-                  Men's Line
+                  For him
                 </Link>
               </li>
               <li>
-                <Link to="/collections" className="transition-colors hover:text-ink">
-                  Curated Capsules
+                <Link
+                  to="/collections"
+                  className="transition-colors hover:text-ink"
+                >
+                  Collections
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Column 2: Client Services */}
+          {/* Column 2: Here to helps */}
           <div>
             <h3 className="mb-4 text-[11px] font-medium uppercase tracking-widest text-ink">
-              Client Service
+              Here to help
             </h3>
             <ul className="space-y-3 text-xs text-stone-600">
               <li>
-                <Link to="/account/orders" className="transition-colors hover:text-ink">
+                <Link
+                  to="/account/orders"
+                  className="transition-colors hover:text-ink"
+                >
                   Order Status & Tracking
                 </Link>
               </li>
               <li>
-                <Link to="/account/addresses" className="transition-colors hover:text-ink">
+                <Link
+                  to="/account/addresses"
+                  className="transition-colors hover:text-ink"
+                >
                   Shipping & Delivery
                 </Link>
               </li>
               <li>
-                <Link to="/account" className="transition-colors hover:text-ink">
+                <Link
+                  to="/account"
+                  className="transition-colors hover:text-ink"
+                >
                   Customer Profile
                 </Link>
               </li>
               <li>
-                <Link to="/admin" className="transition-colors hover:text-ink text-stone-400">
+                <Link
+                  to="/admin"
+                  className="transition-colors hover:text-ink text-stone-400"
+                >
                   Atelier Administration
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Column 3: Private Access Newsletter */}
+          {/* Column 3: Keep in the loop Newsletter */}
           <div>
             <h3 className="mb-4 text-[11px] font-medium uppercase tracking-widest text-ink">
-              Private Access
+              Keep in the loop
             </h3>
             <p className="mb-3 text-xs text-stone-500 leading-relaxed">
-              Curated previews, seasonal capsule releases, and atelier dispatches.
+              New pieces, fresh ideas, and a little inspiration for your inbox.
             </p>
             {result?.ok ? (
               <div className="flex items-center gap-2 rounded bg-stone-100 p-2.5 text-xs text-stone-900 border border-stone-200 animate-fade-in">
@@ -138,7 +154,16 @@ export function Footer() {
                     <ArrowRight size={14} />
                   </button>
                 </div>
-                {errors.email && <p className="text-[10.5px] text-accent">{errors.email.message}</p>}
+                {result && !result.ok && (
+                  <p role="alert" className="text-xs text-accent">
+                    {result.message}
+                  </p>
+                )}
+                {errors.email && (
+                  <p className="text-[10.5px] text-accent">
+                    {errors.email.message}
+                  </p>
+                )}
               </form>
             )}
           </div>
@@ -146,7 +171,9 @@ export function Footer() {
 
         {/* Bottom copyright & payment marks */}
         <div className="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-stone-200/80 pt-8 text-[11px] text-stone-400">
-          <span>© {new Date().getFullYear()} Studio Atelier. All rights reserved.</span>
+          <span>
+            © {new Date().getFullYear()} Studio Atelier. All rights reserved.
+          </span>
           <div className="flex items-center gap-6 text-[10px] uppercase tracking-widest text-stone-400">
             <span>Visa</span>
             <span>Mastercard</span>

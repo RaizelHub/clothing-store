@@ -14,8 +14,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variants: Record<Variant, string> = {
   primary: "bg-ink text-paper hover:bg-stone-800 active:scale-[0.99]",
-  secondary: "bg-stone-100 text-ink border border-stone-200/80 hover:bg-stone-200/70 hover:border-stone-300 active:scale-[0.99]",
-  outline: "border border-ink/40 text-ink bg-transparent hover:border-ink hover:bg-ink hover:text-paper active:scale-[0.99]",
+  secondary:
+    "bg-stone-100 text-ink border border-stone-200/80 hover:bg-stone-200/70 hover:border-stone-300 active:scale-[0.99]",
+  outline:
+    "border border-ink/40 text-ink bg-transparent hover:border-ink hover:bg-ink hover:text-paper active:scale-[0.99]",
   ghost: "text-ink/80 hover:text-ink hover:bg-stone-100/60",
   inverse: "bg-paper text-ink hover:bg-stone-200 active:scale-[0.99]",
 };
@@ -39,11 +41,11 @@ export function Button({
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center gap-2 uppercase tracking-widest transition-all duration-300 ease-editorial disabled:cursor-not-allowed disabled:opacity-40 select-none",
+        "studio-button inline-flex items-center justify-center gap-2 uppercase tracking-widest transition-all duration-300 ease-editorial disabled:cursor-not-allowed disabled:opacity-40 select-none",
         variants[variant],
         sizes[size],
         fullWidth && "w-full",
-        className
+        className,
       )}
       disabled={disabled || loading}
       {...rest}
@@ -60,7 +62,7 @@ export function Spinner({ className }: { className?: string }) {
       aria-hidden
       className={cn(
         "inline-block size-3.5 animate-spin rounded-full border border-current border-t-transparent",
-        className
+        className,
       )}
     />
   );

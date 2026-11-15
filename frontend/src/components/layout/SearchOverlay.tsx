@@ -6,6 +6,7 @@ import { useUIStore } from "@/store/useUIStore";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { getProducts } from "@/api/products";
 import { formatMoney } from "@/lib/format";
+import { containDialogFocus } from "@/lib/dialog";
 
 const TRENDING_SEARCHES = [
   "Silk Slips",
@@ -29,6 +30,7 @@ export function SearchOverlay() {
   const close = useUIStore((s) => s.closeSearch);
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const navigate = useNavigate();
 
   const debouncedQuery = useDebouncedValue(query, 300);
@@ -41,9 +43,17 @@ export function SearchOverlay() {
 
   useEffect(() => {
     if (isOpen) {
+      const dialog = dialogRef.current;
+      dialog?.showModal();
+      const previousOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
       setQuery("");
       const t = setTimeout(() => inputRef.current?.focus(), 50);
-      return () => clearTimeout(t);
+      return () => {
+        clearTimeout(t);
+        dialog?.close();
+        document.body.style.overflow = previousOverflow;
+      };
     }
   }, [isOpen]);
 
@@ -73,7 +83,16 @@ export function SearchOverlay() {
   const results = searchResults?.results ?? [];
 
   return (
-    <div className="fixed inset-0 z-[55] overflow-y-auto" role="dialog" aria-modal="true" aria-label="Search Catalogue">
+    <dialog
+      ref={dialogRef}
+      className="studio-search"
+      aria-label="Search catalogue"
+      onKeyDown={containDialogFocus}
+      onCancel={(event) => {
+        event.preventDefault();
+        close();
+      }}
+    >
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-paper/95 backdrop-blur-md transition-opacity duration-300"
@@ -83,16 +102,22 @@ export function SearchOverlay() {
 
       <div className="container-editorial relative min-h-screen pt-16 sm:pt-24 pb-20">
         {/* Search Input Bar */}
-        <form onSubmit={submit} className="flex items-center gap-4 border-b border-stone-300 pb-5">
+        <form
+          onSubmit={submit}
+          className="flex items-center gap-2 sm:gap-4 border-b border-stone-300 pb-5"
+        >
           <Search size={22} strokeWidth={1.5} className="text-ink/60" />
           <input
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search noble garments, fabrics, styles…"
-            className="flex-1 bg-transparent font-display text-2xl text-ink placeholder:text-stone-400 focus:outline-none sm:text-4xl"
+            placeholder="Find your next favorite…"
+            aria-label="Search products"
+            className="min-w-0 flex-1 bg-transparent font-display text-2xl text-ink placeholder:text-stone-400 focus:outline-none sm:text-4xl"
           />
-          {isLoading && <Loader2 size={20} className="animate-spin text-stone-400" />}
+          {isLoading && (
+            <Loader2 size={20} className="animate-spin text-stone-400" />
+          )}
           {query && (
             <button
               type="button"
@@ -103,10 +128,19 @@ export function SearchOverlay() {
               Clear
             </button>
           )}
-          <button type="submit" aria-label="Submit search" className="text-ink/70 hover:text-ink">
+          <button
+            type="submit"
+            aria-label="Submit search"
+            className="text-ink/70 hover:text-ink"
+          >
             <ArrowRight size={22} strokeWidth={1.5} />
           </button>
-          <button aria-label="Close search overlay" onClick={close} className="text-ink/70 hover:text-ink">
+          <button
+            type="button"
+            aria-label="Close search overlay"
+            onClick={close}
+            className="text-ink/70 hover:text-ink"
+          >
             <X size={22} strokeWidth={1.5} />
           </button>
         </form>
@@ -116,7 +150,9 @@ export function SearchOverlay() {
           <div className="mt-8">
             <div className="flex items-center justify-between border-b border-stone-200 pb-4 mb-6">
               <span className="text-[11px] uppercase tracking-widest text-stone-500 font-medium">
-                {isLoading ? "Searching atelier…" : `${searchResults?.count ?? 0} results for "${debouncedQuery}"`}
+                {isLoading
+                  ? "Finding your favorites…"
+                  : `${searchResults?.count ?? 0} results for "${debouncedQuery}"`}
               </span>
               {results.length > 0 && (
                 <button
@@ -160,8 +196,12 @@ export function SearchOverlay() {
               </div>
             ) : !isLoading ? (
               <div className="py-12 text-center">
-                <p className="font-display text-xl text-ink">No pieces found matching &ldquo;{debouncedQuery}&rdquo;</p>
-                <p className="text-xs text-stone-500 mt-2">Try searching by category, silhouette, or noble fiber (e.g. Silk, Merino, Coat).</p>
+                <p className="font-display text-xl text-ink">
+                  No pieces found matching &ldquo;{debouncedQuery}&rdquo;
+                </p>
+                <p className="text-xs text-stone-500 mt-2">
+                  Try a style or fabric, like linen, knitwear, or coats.
+                </p>
               </div>
             ) : null}
           </div>
@@ -170,7 +210,7 @@ export function SearchOverlay() {
             {/* Trending searches */}
             <div>
               <p className="text-[11px] uppercase tracking-widest text-stone-400 font-medium mb-3">
-                Trending Searches
+                Try a search
               </p>
               <div className="flex flex-wrap gap-2">
                 {TRENDING_SEARCHES.map((term) => (
@@ -210,15 +250,16 @@ export function SearchOverlay() {
             {/* Sourcing tip */}
             <div className="p-6 border border-stone-200/80 bg-stone-50/50 rounded">
               <span className="text-[10px] uppercase tracking-widest text-stone-500 font-mono block mb-1">
-                Atelier Tip
+                Make it yours
               </span>
               <p className="text-xs text-stone-600 leading-relaxed">
-                Filter by materials in our collection pages to browse items by Mulberry silk momme weight, merino micron gauge, or French linen wash.
+                Found something you like? Tap the heart to save it for later.
+                Your favorites are always a click away.
               </p>
             </div>
           </div>
         )}
       </div>
-    </div>
+    </dialog>
   );
 }

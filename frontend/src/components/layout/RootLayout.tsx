@@ -21,7 +21,7 @@ export function RootLayout() {
       <MobileNav />
       <SearchOverlay />
       <CartDrawer />
-      <main className="flex-1">
+      <main id="main-content" tabIndex={-1} className="flex-1">
         <Suspense fallback={<RouteLoadingFallback />}>
           <Outlet />
         </Suspense>

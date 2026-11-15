@@ -24,7 +24,7 @@ export function NewArrivals() {
   return (
     <ProductListing
       title="New Arrivals"
-      subtitle="The latest arrivals from Autumn Capsule 01. Limited editions crafted from noble materials."
+      subtitle="Fresh pieces for your everyday rotation. Find something that feels like you."
       baseQuery={{ new: "true" }}
       showFilters={true}
     />
@@ -46,7 +46,7 @@ export function Men() {
                   "px-4 py-1.5 text-[11px] uppercase tracking-widest transition-all duration-200 whitespace-nowrap",
                   isActive
                     ? "bg-ink text-paper font-medium"
-                    : "border border-stone-200/90 bg-stone-50 text-stone-600 hover:border-stone-400 hover:text-ink"
+                    : "border border-stone-200/90 bg-stone-50 text-stone-600 hover:border-stone-400 hover:text-ink",
                 )}
               >
                 {tab.label}
@@ -56,8 +56,8 @@ export function Men() {
         </div>
       </div>
       <ProductListing
-        title="Men's Line"
-        subtitle="Architectural tailoring, double-faced wool, and foundational basics cut for layering."
+        title="For him"
+        subtitle="Easy layers, relaxed tailoring, and the pieces you’ll wear on repeat."
         baseQuery={{ category: "men" }}
       />
     </div>
@@ -79,7 +79,7 @@ export function Women() {
                   "px-4 py-1.5 text-[11px] uppercase tracking-widest transition-all duration-200 whitespace-nowrap",
                   isActive
                     ? "bg-ink text-paper font-medium"
-                    : "border border-stone-200/90 bg-stone-50 text-stone-600 hover:border-stone-400 hover:text-ink"
+                    : "border border-stone-200/90 bg-stone-50 text-stone-600 hover:border-stone-400 hover:text-ink",
                 )}
               >
                 {tab.label}
@@ -89,8 +89,8 @@ export function Women() {
         </div>
       </div>
       <ProductListing
-        title="Women's Line"
-        subtitle="The enduring pieces that do the work in a considered wardrobe: 22-momme silk, textured knits, and tailored outerwear."
+        title="For her"
+        subtitle="From everyday favorites to a little occasion. Make room for something you love."
         baseQuery={{ category: "women" }}
       />
     </div>
@@ -100,9 +100,15 @@ export function Women() {
 // /category/:slug — supports nested categories
 export function CategoryPage() {
   const { slug = "" } = useParams();
-  const { data: categories } = useQuery({ queryKey: ["categories"], queryFn: getCategories });
+  const { data: categories } = useQuery({
+    queryKey: ["categories"],
+    queryFn: getCategories,
+  });
 
-  const find = (list: Category[] | undefined, s: string): Category | undefined => {
+  const find = (
+    list: Category[] | undefined,
+    s: string,
+  ): Category | undefined => {
     if (!list) return undefined;
     for (const c of list) {
       if (c.slug === s) return c;
@@ -130,7 +136,7 @@ export function CategoryPage() {
                     "px-4 py-1.5 text-[11px] uppercase tracking-widest transition-all duration-200 whitespace-nowrap",
                     isActive
                       ? "bg-ink text-paper font-medium"
-                      : "border border-stone-200/90 bg-stone-50 text-stone-600 hover:border-stone-400 hover:text-ink"
+                      : "border border-stone-200/90 bg-stone-50 text-stone-600 hover:border-stone-400 hover:text-ink",
                   )}
                 >
                   {tab.label}
@@ -143,7 +149,11 @@ export function CategoryPage() {
       <ProductListing
         key={slug}
         title={category?.name ?? "Collection"}
-        subtitle={category ? `${category.name} — meticulously cut and crafted by the Studio.` : undefined}
+        subtitle={
+          category
+            ? `${category.name} — meticulously cut and crafted by the Studio.`
+            : undefined
+        }
         baseQuery={{ category: slug }}
       />
     </div>
