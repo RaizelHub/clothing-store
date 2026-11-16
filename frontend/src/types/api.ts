@@ -173,7 +173,10 @@ export type OrderStatus =
   | "shipped"
   | "delivered"
   | "cancelled"
-  | "refunded";
+  | "refunded"
+  | "failed"
+  | "expired"
+  | "requires_action";
 
 export const ORDER_STATUSES: OrderStatus[] = [
   "pending",
@@ -183,9 +186,12 @@ export const ORDER_STATUSES: OrderStatus[] = [
   "delivered",
   "cancelled",
   "refunded",
+  "failed",
+  "expired",
+  "requires_action",
 ];
 
-export const TERMINAL_STATUSES: OrderStatus[] = ["delivered", "cancelled", "refunded"];
+export const TERMINAL_STATUSES: OrderStatus[] = ["delivered", "cancelled", "refunded", "failed", "expired"];
 
 export interface OrderItem {
   id: number;
@@ -231,12 +237,30 @@ export interface Order {
   billing_same_as_shipping: boolean;
   shipping_method: string;
   payment_method: string;
+  payment_provider?: string;
+  payment_reference?: string;
+  payment_transaction_id?: string;
+  payment_status?: string;
+  checkout_url?: string;
+  is_stock_deducted?: boolean;
   tracking_number: string | null;
   carrier: string | null;
   timeline: OrderTimelineEntry[];
   created_at: string;
   customer_email: string | null;
   customer_name: string | null;
+}
+
+export interface OrderStatusResponse {
+  order_number: string;
+  status: OrderStatus;
+  payment_status: string;
+  payment_provider: string;
+  payment_method: string;
+  total: string;
+  created_at: string;
+  items: OrderItem[];
+  timeline: OrderTimelineEntry[];
 }
 
 export interface ShippingQuote {

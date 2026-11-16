@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
-import { Check, Lock, Truck } from "lucide-react";
+import { Check, CreditCard, Lock, ShieldCheck, Truck } from "lucide-react";
 import { cardSchema, couponSchema, shippingSchema, type CardInput, type CouponInput, type ShippingInput } from "@/lib/validation";
 import { useCart, useShippingQuote, useUpdateCartItem } from "@/hooks/useCart";
 import { useSession } from "@/hooks/auth";
@@ -27,7 +27,9 @@ export function CheckoutPage() {
   const { data: me } = useSession();
   const updateItem = useUpdateCartItem();
 
+  const [searchParams] = useSearchParams();
   const [step, setStep] = useState<Step>("contact");
+  const [paymentMethod, setPaymentMethod] = useState<"paymongo" | "mock">("paymongo");
   const [guestEmail, setGuestEmail] = useState("");
   const [guestEmailTouched, setGuestEmailTouched] = useState(false);
   const guestEmailValid = useMemo(() => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(guestEmail.trim()), [guestEmail]);
@@ -37,6 +39,14 @@ export function CheckoutPage() {
   const [coupon, setCoupon] = useState<CouponValidation | null>(null);
   const [couponInputCode, setCouponInputCode] = useState("");
   const [serverError, setServerError] = useState<string | null>(null);
+
+  // Return from cancellation at PayMongo
+  useEffect(() => {
+    if (searchParams.get("cancelled") === "true") {
+      setServerError("Payment was cancelled or interrupted on PayMongo. Your bag items remain saved.");
+      setStep("payment");
+    }
+  }, [searchParams]);
 
   // Verified-email gate for signed-in customers.
   useEffect(() => {
@@ -103,11 +113,19 @@ export function CheckoutPage() {
         billing_same_as_shipping: sameAsShipping,
         shipping_method: method,
         coupon_code: coupon?.valid ? coupon.code : null,
-        payment: { provider: "paymongo", method: "card", number: card.number },
+        payment: {
+          provider: paymentMethod === "paymongo" ? "paymongo" : "mock",
+          method: "card",
+          number: paymentMethod === "mock" ? card.number : undefined,
+        },
       });
     },
     onSuccess: (order: Order) => {
-      navigate(`/checkout/success/${order.order_number}`, { state: { order } });
+      if (order.checkout_url && paymentMethod === "paymongo") {
+        window.location.href = order.checkout_url;
+      } else {
+        navigate(`/checkout/success/${order.order_number}`, { state: { order } });
+      }
     },
     onError: (e) => setServerError(getApiErrorMessage(e)),
   });
@@ -287,6 +305,62 @@ export function CheckoutPage() {
               </button>
             </div>
 
+            {/* Payment Method Selector */}
+            <div className="mt-6 max-w-2xl space-y-4">
+              <h3 className="text-xs uppercase tracking-widest text-stone-500">Payment method</h3>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentMethod("paymongo");
+                    setServerError(null);
+                  }}
+                  className={cn(
+                    "flex flex-col justify-between border p-5 text-left transition-colors",
+                    paymentMethod === "paymongo" ? "border-ink bg-paper" : "border-stone-200 hover:border-stone-400"
+                  )}
+                >
+                  <div>
+                    <span className="flex items-center justify-between">
+                      <span className="text-sm font-medium">PayMongo Checkout</span>
+                      <ShieldCheck size={16} className="text-stone-400" />
+                    </span>
+                    <span className="mt-1 block text-xs text-stone-500">GCash, Maya, Cards, GrabPay</span>
+                  </div>
+                  <span className="mt-4 flex flex-wrap gap-1.5">
+                    {["Cards", "GCash", "Maya"].map((tag) => (
+                      <span key={tag} className="border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] uppercase tracking-wider text-stone-600">
+                        {tag}
+                      </span>
+                    ))}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentMethod("mock");
+                    setServerError(null);
+                  }}
+                  className={cn(
+                    "flex flex-col justify-between border p-5 text-left transition-colors",
+                    paymentMethod === "mock" ? "border-ink bg-paper" : "border-stone-200 hover:border-stone-400"
+                  )}
+                >
+                  <div>
+                    <span className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Test / Mock Payment</span>
+                      <CreditCard size={16} className="text-stone-400" />
+                    </span>
+                    <span className="mt-1 block text-xs text-stone-500">Direct simulator for local development</span>
+                  </div>
+                  <span className="mt-4 inline-block border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] uppercase tracking-wider text-stone-600">
+                    Test Mode
+                  </span>
+                </button>
+              </div>
+            </div>
+
             {!sameAsShipping && (
               <div className="mt-6 max-w-2xl">
                 <h3 className="text-sm uppercase tracking-widest">Billing address</h3>
@@ -299,36 +373,54 @@ export function CheckoutPage() {
               onSubmit={(e) => e.preventDefault()}
               noValidate
             >
-              <div className="border border-stone-200 p-6">
-                <div className="flex items-center justify-between">
-                  <h3 className="flex items-center gap-2 text-sm uppercase tracking-widest">
-                    <Lock size={14} strokeWidth={1.5} /> Pay with card
-                  </h3>
-                  <span className="text-xs text-stone-400">via PayMongo</span>
-                </div>
-                <div className="mt-5 space-y-5">
-                  <Field label="Name on card" error={cardForm.formState.errors.name?.message}>
-                    <Input autoComplete="cc-name" invalid={!!cardForm.formState.errors.name} {...cardForm.register("name")} />
-                  </Field>
-                  <Field label="Card number" error={cardForm.formState.errors.number?.message}>
-                    <Input
-                      inputMode="numeric"
-                      autoComplete="cc-number"
-                      placeholder="4242 4242 4242 4242"
-                      invalid={!!cardForm.formState.errors.number}
-                      {...cardForm.register("number")}
-                    />
-                  </Field>
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Expiry" error={cardForm.formState.errors.expiry?.message}>
-                      <Input inputMode="numeric" placeholder="MM/YY" autoComplete="cc-exp" invalid={!!cardForm.formState.errors.expiry} {...cardForm.register("expiry")} />
-                    </Field>
-                    <Field label="CVC" error={cardForm.formState.errors.cvc?.message}>
-                      <Input inputMode="numeric" placeholder="123" autoComplete="cc-csc" invalid={!!cardForm.formState.errors.cvc} {...cardForm.register("cvc")} />
-                    </Field>
+              {paymentMethod === "paymongo" ? (
+                <div className="border border-stone-200 p-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="flex items-center gap-2 text-sm uppercase tracking-widest">
+                      <Lock size={14} strokeWidth={1.5} /> Secure Hosted Checkout
+                    </h3>
+                    <span className="text-xs text-stone-400">via PayMongo</span>
+                  </div>
+                  <p className="mt-3 text-xs leading-relaxed text-stone-600">
+                    You will be securely redirected to PayMongo to select your preferred payment method (GCash, Maya, GrabPay, or credit/debit card) and complete payment. You will return directly to Studio once verified.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 text-xs text-stone-400">
+                    <ShieldCheck size={14} />
+                    <span>256-bit SSL encrypted · No sensitive payment data is stored on Studio</span>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="border border-stone-200 p-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="flex items-center gap-2 text-sm uppercase tracking-widest">
+                      <CreditCard size={14} strokeWidth={1.5} /> Direct Test Card
+                    </h3>
+                    <span className="text-xs text-stone-400">Simulator</span>
+                  </div>
+                  <div className="mt-5 space-y-5">
+                    <Field label="Name on card" error={cardForm.formState.errors.name?.message}>
+                      <Input autoComplete="cc-name" invalid={!!cardForm.formState.errors.name} {...cardForm.register("name")} />
+                    </Field>
+                    <Field label="Card number" error={cardForm.formState.errors.number?.message}>
+                      <Input
+                        inputMode="numeric"
+                        autoComplete="cc-number"
+                        placeholder="4242 4242 4242 4242"
+                        invalid={!!cardForm.formState.errors.number}
+                        {...cardForm.register("number")}
+                      />
+                    </Field>
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Expiry" error={cardForm.formState.errors.expiry?.message}>
+                        <Input inputMode="numeric" placeholder="MM/YY" autoComplete="cc-exp" invalid={!!cardForm.formState.errors.expiry} {...cardForm.register("expiry")} />
+                      </Field>
+                      <Field label="CVC" error={cardForm.formState.errors.cvc?.message}>
+                        <Input inputMode="numeric" placeholder="123" autoComplete="cc-csc" invalid={!!cardForm.formState.errors.cvc} {...cardForm.register("cvc")} />
+                      </Field>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="mt-6 flex items-center gap-2">
                 <Checkbox
@@ -345,23 +437,36 @@ export function CheckoutPage() {
               )}
 
               <div className="mt-8 flex items-center justify-between">
-                <p className="text-xs text-stone-400">Test card: 4242 4242 4242 4242 · any future date · any CVC</p>
+                <p className="text-xs text-stone-400">
+                  {paymentMethod === "paymongo"
+                    ? "Redirects to PayMongo secure portal"
+                    : "Test card: 4242 4242 4242 4242 · any future date · any CVC"}
+                </p>
                 <Button
                   size="lg"
                   loading={place.isPending}
                   onClick={() => {
-                    cardForm.trigger().then((valid) => {
-                      if (!valid) return;
+                    if (paymentMethod === "mock") {
+                      cardForm.trigger().then((valid) => {
+                        if (!valid) return;
+                        if (!sameAsShipping && !billing) {
+                          setServerError("Complete the billing address.");
+                          return;
+                        }
+                        setServerError(null);
+                        place.mutate();
+                      });
+                    } else {
                       if (!sameAsShipping && !billing) {
                         setServerError("Complete the billing address.");
                         return;
                       }
                       setServerError(null);
                       place.mutate();
-                    });
+                    }
                   }}
                 >
-                  Place order · {formatMoney(totals.total)}
+                  {paymentMethod === "paymongo" ? "Proceed to PayMongo" : "Place order"} · {formatMoney(totals.total)}
                 </Button>
               </div>
             </form>

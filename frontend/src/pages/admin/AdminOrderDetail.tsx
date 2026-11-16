@@ -112,8 +112,15 @@ export function AdminOrderDetail() {
         </div>
         {status !== order.status && (
           <div className="mt-4">
-            <Field label="Note (optional)" optional>
-              <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Left with concierge" />
+            <Field
+              label={status === "paid" && order.status !== "paid" ? "Audit Justification (Required to manually mark paid)" : "Note (optional)"}
+              optional={status !== "paid" || order.status === "paid"}
+            >
+              <Input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder={status === "paid" && order.status !== "paid" ? "e.g. Verified bank deposit receipt #12345" : "e.g. Left with concierge"}
+              />
             </Field>
           </div>
         )}
@@ -130,9 +137,18 @@ export function AdminOrderDetail() {
         {status !== order.status && (
           <div className="mt-5 flex items-center gap-4">
             <Button
-              onClick={() => save.mutate()}
+              onClick={() => {
+                if (status === "paid" && order.status !== "paid" && !note.trim()) {
+                  setMessage({ ok: false, text: "An auditable note is required to manually mark an order as paid." });
+                  return;
+                }
+                save.mutate();
+              }}
               loading={save.isPending}
-              disabled={TERMINAL_STATUSES.includes(order.status) && status !== order.status}
+              disabled={
+                (TERMINAL_STATUSES.includes(order.status) && status !== order.status) ||
+                (status === "paid" && order.status !== "paid" && !note.trim())
+              }
             >
               Save update
             </Button>
@@ -141,6 +157,33 @@ export function AdminOrderDetail() {
             )}
           </div>
         )}
+      </section>
+
+      {/* Payment details */}
+      <section className="border border-stone-200 p-6 text-sm">
+        <h2 className="text-xs uppercase tracking-widest text-stone-500">Payment details</h2>
+        <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <span className="block text-xs text-stone-400">Provider</span>
+            <span className="mt-1 block font-mono text-sm uppercase">{order.payment_provider || "mock"}</span>
+          </div>
+          <div>
+            <span className="block text-xs text-stone-400">Payment Status</span>
+            <span className="mt-1 block text-sm font-medium capitalize text-ink">{order.payment_status || order.status}</span>
+          </div>
+          <div>
+            <span className="block text-xs text-stone-400">Session / Reference</span>
+            <span className="mt-1 block truncate font-mono text-xs text-stone-600">{order.payment_reference || "—"}</span>
+          </div>
+          <div>
+            <span className="block text-xs text-stone-400">Transaction ID</span>
+            <span className="mt-1 block truncate font-mono text-xs text-stone-600">{order.payment_transaction_id || "—"}</span>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap justify-between border-t border-stone-100 pt-3 text-xs text-stone-500">
+          <span>Method: <strong className="font-normal text-stone-700">{order.payment_method || "Online"}</strong></span>
+          <span>Stock: <strong className="font-normal text-stone-700">{order.is_stock_deducted ? "Inventory Deducted" : "Stock Not Reserved"}</strong></span>
+        </div>
       </section>
 
       {/* Timeline */}

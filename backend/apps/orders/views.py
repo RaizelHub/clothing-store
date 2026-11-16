@@ -2,10 +2,13 @@ import re
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, DecimalField, F, Q, Sum
 from django.db.models.functions import Coalesce
+from django.http import JsonResponse
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import AuthenticationFailed, NotFound, PermissionDenied, ValidationError
@@ -15,13 +18,29 @@ from rest_framework.response import Response
 from apps.accounts.serializers import AddressSerializer, UserSerializer
 from apps.catalog.models import Product, ProductVariant, StoreSettings
 from apps.common.money import cents_to_str, from_cents, to_cents
-from apps.orders.models import Cart, CartItem, Coupon, NewsletterSubscription, Order, OrderItem, WishlistItem
+from apps.orders.models import (
+    Cart,
+    CartItem,
+    Coupon,
+    NewsletterSubscription,
+    Order,
+    OrderItem,
+    PaymentWebhookEvent,
+    WishlistItem,
+)
+from apps.orders.payments import (
+    PaymentConfigurationError,
+    PaymentError,
+    PaymentProviderError,
+    get_payment_provider,
+)
 
 from .serializers import (
     CartItemSerializer,
     CouponInputSerializer,
     CouponSerializer,
     LowStockSerializer,
+    OrderItemSerializer,
     OrderSerializer,
     OrderUpdateSerializer,
     NewsletterSerializer,
@@ -249,12 +268,24 @@ def _address_from_payload(payload: dict) -> dict:
 def place_order(request):
     body = request.data
     payment = body.get("payment") or {}
+
+    # Environment-based provider selection (PayMongo isolated behind configuration)
+    env_provider = getattr(settings, "PAYMENTS_PROVIDER", "mock").strip().lower()
+    requested_provider = str(payment.get("provider", "")).strip().lower()
+    if env_provider == "paymongo" and requested_provider != "mock":
+        provider_name = "paymongo"
+    else:
+        provider_name = "mock"
+
     card_number = str(payment.get("number", "")).replace(" ", "")
     last4 = card_number[-4:] if len(card_number) >= 4 else "4242"
-    if card_number == "4242424242424444":
-        return Response({"detail": "Your card was declined. Try 4242 4242 4242 4242."}, status=status.HTTP_402_PAYMENT_REQUIRED)
-    if last4 and int(last4[-1]) % 5 == 0:
-        return Response({"detail": "Your card was declined."}, status=status.HTTP_402_PAYMENT_REQUIRED)
+
+    # In mock mode or if test card is directly submitted, simulate decline scenarios
+    if provider_name == "mock" or (requested_provider != "paymongo" and card_number):
+        if card_number == "4242424242424444":
+            return Response({"detail": "Your card was declined. Try 4242 4242 4242 4242."}, status=status.HTTP_402_PAYMENT_REQUIRED)
+        if last4 and int(last4[-1]) % 5 == 0:
+            return Response({"detail": "Your card was declined."}, status=status.HTTP_402_PAYMENT_REQUIRED)
 
     cart = _cart(request)
     items = list(cart.items.select_related("variant__product", "variant__color", "variant__size").all())
@@ -279,8 +310,8 @@ def place_order(request):
         raise ValidationError({"coupon": [coupon["error"] or "Invalid coupon."]})
     discount_c = to_cents(coupon["discount"]) if coupon and coupon["valid"] else 0
     shipping_c = shipping_cost_cents(str(body.get("shipping_method", "standard")), max(0, subtotal_c - discount_c))
-    settings = StoreSettings.get_solo()
-    tax_c = round((subtotal_c - discount_c + shipping_c) * settings.tax_rate)
+    settings_obj = StoreSettings.get_solo()
+    tax_c = round((subtotal_c - discount_c + shipping_c) * settings_obj.tax_rate)
     total_c = max(0, subtotal_c - discount_c) + shipping_c + tax_c
 
     user, _ = _owner(request)
@@ -298,12 +329,28 @@ def place_order(request):
         or (f"{user.first_name} {user.last_name}".strip() if user else shipping_address.get("recipient") or "")
     ).strip()
 
+    is_paymongo = (provider_name == "paymongo")
+    initial_status = Order.STATUS_PENDING if is_paymongo else Order.STATUS_PAID
+    initial_payment_status = "pending" if is_paymongo else "paid"
+    payment_method_label = (
+        "PayMongo Checkout"
+        if is_paymongo
+        else f"{payment.get('provider', 'mock')} {payment.get('method', 'card')} •••• {last4}".strip()
+    )
+    initial_timeline = [
+        {"status": "pending", "at": now.isoformat(), "note": "Order created, awaiting payment" if is_paymongo else None}
+    ]
+    if not is_paymongo:
+        initial_timeline.append({"status": "paid", "at": now.isoformat(), "note": "Payment confirmed"})
+
     order = Order.objects.create(
         order_number=_next_order_number(),
         user=user,
         customer_email=customer_email,
         customer_name=customer_name,
-        status=Order.STATUS_PAID,
+        status=initial_status,
+        payment_status=initial_payment_status,
+        payment_provider=provider_name,
         subtotal=from_cents(subtotal_c),
         shipping=from_cents(shipping_c),
         discount=from_cents(discount_c),
@@ -314,12 +361,11 @@ def place_order(request):
         billing_address=billing_address,
         billing_same_as_shipping=billing_same,
         shipping_method=str(body.get("shipping_method", "standard")),
-        payment_method=f"{payment.get('provider', 'paymongo')} {payment.get('method', 'card')} \u2022\u2022\u2022\u2022 {last4}",
-        timeline=[
-            {"status": "pending", "at": now.isoformat(), "note": None},
-            {"status": "paid", "at": now.isoformat(), "note": "Payment confirmed"},
-        ],
+        payment_method=payment_method_label,
+        timeline=initial_timeline,
+        is_stock_deducted=True,
     )
+
     for item in items:
         v = locked_variants[item.variant_id]
         img = v.product.images.filter(color=v.color).first() or v.product.images.first()
@@ -335,9 +381,38 @@ def place_order(request):
             image=img.image if img else "",
         )
         ProductVariant.objects.filter(pk=v.pk).update(stock=F("stock") - item.quantity)
+
     if order.coupon:
         Coupon.objects.filter(pk=order.coupon.pk).update(uses=F("uses") + 1)
+
     cart.items.all().delete()
+
+    if is_paymongo:
+        frontend_base = getattr(settings, "FRONTEND_URL", "http://localhost:5173").rstrip("/")
+        success_url = f"{frontend_base}/checkout/success/{order.order_number}"
+        cancel_url = f"{frontend_base}/checkout?cancelled=true&order_number={order.order_number}"
+        provider = get_payment_provider("paymongo")
+        try:
+            session = provider.create_checkout_session(
+                order=order,
+                success_url=success_url,
+                cancel_url=cancel_url,
+            )
+            order.payment_reference = session.session_id
+            order.checkout_url = session.checkout_url
+            order.payment_data = {
+                "session_id": session.session_id,
+                "checkout_url": session.checkout_url,
+                **session.metadata,
+            }
+            order.save(update_fields=["payment_reference", "checkout_url", "payment_data"])
+        except (PaymentProviderError, PaymentConfigurationError) as e:
+            # Transaction rolls back automatically due to @transaction.atomic
+            raise ValidationError({"payment": [str(e)]})
+    else:
+        order.payment_reference = f"mock_ref_{order.order_number}"
+        order.save(update_fields=["payment_reference"])
+
     return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
 
@@ -371,17 +446,20 @@ def cancel_order(request, order_number):
     if order.status not in (Order.STATUS_PENDING, Order.STATUS_PAID):
         raise ValidationError({"detail": "Only pending or paid orders can be cancelled."})
     order.status = Order.STATUS_CANCELLED
+    order.payment_status = "cancelled"
     order.timeline = [*order.timeline, {"status": "cancelled", "at": timezone.now().isoformat(), "note": "Cancelled by customer"}]
-    order.save(update_fields=["status", "timeline"])
 
-    # Restore inventory stock for cancelled items
-    for item in order.items.all():
-        ProductVariant.objects.filter(product=item.product, sku=item.sku).update(stock=F("stock") + item.quantity)
+    # Restore inventory stock if deducted
+    if order.is_stock_deducted:
+        for item in order.items.all():
+            ProductVariant.objects.filter(product=item.product, sku=item.sku).update(stock=F("stock") + item.quantity)
+        order.is_stock_deducted = False
 
     # Decrement coupon uses if applicable
     if order.coupon:
         Coupon.objects.filter(pk=order.coupon.pk, uses__gt=0).update(uses=F("uses") - 1)
 
+    order.save(update_fields=["status", "payment_status", "timeline", "is_stock_deducted"])
     return Response(OrderSerializer(order).data)
 
 
@@ -487,15 +565,38 @@ def admin_order_detail(request, order_number):
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
         new_status = data.get("status")
+        update_fields = ["status", "timeline", "tracking_number", "carrier", "payment_status", "is_stock_deducted"]
         if new_status and new_status != order.status:
+            # Rule: Do not allow administrators to manually mark an order paid without an authorized, auditable process.
+            if new_status == Order.STATUS_PAID and order.status != Order.STATUS_PAID:
+                note = (data.get("note") or "").strip()
+                if not note:
+                    raise ValidationError({"note": ["An auditable note is required to manually mark an order as paid."]})
+                note = f"Manual override by staff ({request.user.email}): {note}"
+                order.payment_status = "paid"
+                if not order.is_stock_deducted:
+                    for item in order.items.all():
+                        ProductVariant.objects.filter(product=item.product, sku=item.sku).update(stock=F("stock") - item.quantity)
+                    order.is_stock_deducted = True
+            elif new_status == Order.STATUS_CANCELLED and order.status != Order.STATUS_CANCELLED:
+                note = data.get("note") or f"Cancelled by staff ({request.user.email})"
+                order.payment_status = "cancelled"
+                if order.is_stock_deducted:
+                    for item in order.items.all():
+                        ProductVariant.objects.filter(product=item.product, sku=item.sku).update(stock=F("stock") + item.quantity)
+                    order.is_stock_deducted = False
+                if order.coupon:
+                    Coupon.objects.filter(pk=order.coupon.pk, uses__gt=0).update(uses=F("uses") - 1)
+            else:
+                note = data.get("note") or None
+
             order.status = new_status
-            note = data.get("note") or None
             order.timeline = [*order.timeline, {"status": new_status, "at": timezone.now().isoformat(), "note": note}]
         if "tracking_number" in data:
             order.tracking_number = data["tracking_number"] or None
             if data.get("carrier"):
                 order.carrier = data["carrier"]
-        order.save(update_fields=["status", "timeline", "tracking_number", "carrier"])
+        order.save(update_fields=update_fields)
     return Response(OrderSerializer(order).data)
 
 
@@ -586,3 +687,189 @@ def admin_coupon_detail(request, pk):
             setattr(coupon, field, value)
         coupon.save()
     return Response(CouponSerializer(coupon).data)
+
+
+# --- Order status polling & Webhooks ----------------------------------------------------
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def order_status_view(request, order_number):
+    """Public status endpoint for polling or returning from PayMongo checkout."""
+    order = Order.objects.filter(order_number=order_number).prefetch_related("items").first()
+    if not order:
+        raise NotFound("Not found.")
+    return Response(
+        {
+            "order_number": order.order_number,
+            "status": order.status,
+            "payment_status": order.payment_status,
+            "payment_provider": order.payment_provider,
+            "payment_method": order.payment_method,
+            "total": str(order.total),
+            "created_at": order.created_at.isoformat(),
+            "items": OrderItemSerializer(order.items.all(), many=True).data,
+            "timeline": order.timeline,
+        }
+    )
+
+
+@csrf_exempt
+def paymongo_webhook(request):
+    """
+    POST /api/orders/webhooks/paymongo/ and /api/orders/webhooks/
+    Secure webhook endpoint verifying Paymongo-Signature before any processing.
+    """
+    if request.method != "POST":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+
+    raw_body = request.body
+    headers = {k: v for k, v in request.headers.items()}
+
+    provider = get_payment_provider("paymongo")
+    verification = provider.verify_webhook(raw_body, headers)
+
+    if not verification.is_valid:
+        return JsonResponse({"error": verification.error_message or "Invalid webhook signature"}, status=400)
+
+    event_id = verification.event_id
+    if not event_id:
+        return JsonResponse({"error": "Missing event ID in payload"}, status=400)
+
+    # Idempotency check: if event already processed, return 200 OK immediately
+    if PaymentWebhookEvent.objects.filter(event_id=event_id, status=PaymentWebhookEvent.STATUS_PROCESSED).exists():
+        return JsonResponse({"detail": "Event already processed"}, status=200)
+
+    event_type = verification.event_type
+    order_number = verification.order_number
+    payment_reference = verification.payment_reference
+
+    # Locate the order
+    order = None
+    if order_number:
+        order = Order.objects.filter(order_number=order_number).first()
+    if not order and payment_reference:
+        order = Order.objects.filter(payment_reference=payment_reference).first()
+
+    if not order:
+        # Record unassociated event safely
+        PaymentWebhookEvent.objects.create(
+            event_id=event_id,
+            provider="paymongo",
+            event_type=event_type,
+            order_number=order_number or "",
+            payment_reference=payment_reference or "",
+            status=PaymentWebhookEvent.STATUS_IGNORED,
+            payload=verification.raw_event,
+            error_message="Order not found for reference",
+        )
+        return JsonResponse({"detail": "Order not found"}, status=404)
+
+    # Atomic processing for state and stock safety
+    with transaction.atomic():
+        locked_order = Order.objects.select_for_update().filter(pk=order.pk).first()
+
+        # Handle successful payment
+        if event_type in ("checkout_session.payment.paid", "payment.paid"):
+            if locked_order.status in (Order.STATUS_PAID, Order.STATUS_PROCESSING, Order.STATUS_SHIPPED, Order.STATUS_DELIVERED):
+                # Already paid, idempotent return
+                pass
+            else:
+                # Ensure stock is safely deducted
+                if not locked_order.is_stock_deducted:
+                    # Check variants stock availability
+                    items = list(locked_order.items.all())
+                    can_fulfill = True
+                    for item in items:
+                        v = ProductVariant.objects.select_for_update().filter(product=item.product, sku=item.sku).first()
+                        if not v or v.stock < item.quantity:
+                            can_fulfill = False
+                            break
+                    if can_fulfill:
+                        for item in items:
+                            ProductVariant.objects.filter(product=item.product, sku=item.sku).update(stock=F("stock") - item.quantity)
+                        locked_order.is_stock_deducted = True
+                    else:
+                        # Cannot fulfill: Safe exception path (manual review)
+                        locked_order.status = Order.STATUS_REQUIRES_ACTION
+                        locked_order.payment_status = "paid"
+                        locked_order.payment_transaction_id = verification.payment_transaction_id or ""
+                        locked_order.timeline = [
+                            *locked_order.timeline,
+                            {
+                                "status": "requires_action",
+                                "at": timezone.now().isoformat(),
+                                "note": "Payment verified but inventory unavailable. Flagged for merchant manual review.",
+                            },
+                        ]
+                        locked_order.save(update_fields=["status", "payment_status", "payment_transaction_id", "timeline"])
+                        PaymentWebhookEvent.objects.create(
+                            event_id=event_id,
+                            provider="paymongo",
+                            event_type=event_type,
+                            order_number=locked_order.order_number,
+                            payment_reference=payment_reference or "",
+                            status=PaymentWebhookEvent.STATUS_PROCESSED,
+                            payload=verification.raw_event,
+                            error_message="Payment verified but inventory insufficient. Flagged for manual review.",
+                        )
+                        return JsonResponse({"ok": True, "detail": "Flagged for manual review"}, status=200)
+
+                # Transition to PAID
+                locked_order.status = Order.STATUS_PAID
+                locked_order.payment_status = "paid"
+                if verification.payment_transaction_id:
+                    locked_order.payment_transaction_id = verification.payment_transaction_id
+                method_name = verification.payment_method or "online"
+                tx_id = verification.payment_transaction_id or ""
+                locked_order.payment_method = f"paymongo {method_name} {tx_id}".strip()
+                now_str = verification.paid_at or timezone.now().isoformat()
+                locked_order.timeline = [
+                    *locked_order.timeline,
+                    {
+                        "status": "paid",
+                        "at": now_str,
+                        "note": f"Payment verified via PayMongo webhook (tx: {tx_id})",
+                    },
+                ]
+                locked_order.save(update_fields=["status", "payment_status", "payment_transaction_id", "payment_method", "timeline", "is_stock_deducted"])
+
+        # Handle failed or expired payment
+        elif event_type in ("checkout_session.expired", "payment.failed"):
+            if locked_order.status == Order.STATUS_PENDING:
+                new_st = Order.STATUS_EXPIRED if "expired" in event_type else Order.STATUS_FAILED
+                locked_order.status = new_st
+                locked_order.payment_status = "expired" if "expired" in event_type else "failed"
+
+                # Release reserved inventory
+                if locked_order.is_stock_deducted:
+                    for item in locked_order.items.all():
+                        ProductVariant.objects.filter(product=item.product, sku=item.sku).update(stock=F("stock") + item.quantity)
+                    locked_order.is_stock_deducted = False
+
+                # Release coupon use
+                if locked_order.coupon:
+                    Coupon.objects.filter(pk=locked_order.coupon.pk, uses__gt=0).update(uses=F("uses") - 1)
+
+                locked_order.timeline = [
+                    *locked_order.timeline,
+                    {
+                        "status": new_st,
+                        "at": timezone.now().isoformat(),
+                        "note": f"PayMongo event: {event_type}",
+                    },
+                ]
+                locked_order.save(update_fields=["status", "payment_status", "timeline", "is_stock_deducted"])
+
+        # Record webhook event as processed
+        PaymentWebhookEvent.objects.create(
+            event_id=event_id,
+            provider="paymongo",
+            event_type=event_type,
+            order_number=locked_order.order_number,
+            payment_reference=payment_reference or "",
+            status=PaymentWebhookEvent.STATUS_PROCESSED,
+            payload=verification.raw_event,
+        )
+
+    return JsonResponse({"ok": True, "event_id": event_id, "status": locked_order.status}, status=200)

@@ -9,6 +9,9 @@ const STYLES: Record<OrderStatus, string> = {
   delivered: "bg-ink text-paper border-ink",
   cancelled: "border-accent/50 text-accent",
   refunded: "border-accent/50 text-accent",
+  failed: "border-accent text-accent",
+  expired: "border-stone-300 text-stone-400",
+  requires_action: "border-amber-600 text-amber-700",
 };
 
 export function OrderStatusBadge({ status }: { status: OrderStatus }) {

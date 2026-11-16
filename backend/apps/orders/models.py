@@ -76,6 +76,9 @@ class Order(models.Model):
     STATUS_DELIVERED = "delivered"
     STATUS_CANCELLED = "cancelled"
     STATUS_REFUNDED = "refunded"
+    STATUS_FAILED = "failed"
+    STATUS_EXPIRED = "expired"
+    STATUS_REQUIRES_ACTION = "requires_action"
     STATUS_CHOICES = [
         (STATUS_PENDING, "Pending"),
         (STATUS_PAID, "Paid"),
@@ -84,6 +87,9 @@ class Order(models.Model):
         (STATUS_DELIVERED, "Delivered"),
         (STATUS_CANCELLED, "Cancelled"),
         (STATUS_REFUNDED, "Refunded"),
+        (STATUS_FAILED, "Failed"),
+        (STATUS_EXPIRED, "Expired"),
+        (STATUS_REQUIRES_ACTION, "Requires Action"),
     ]
 
     order_number = models.CharField(max_length=20, unique=True)
@@ -92,7 +98,7 @@ class Order(models.Model):
     )
     customer_email = models.EmailField(blank=True)
     customer_name = models.CharField(max_length=160, blank=True)
-    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
 
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
     shipping = models.DecimalField(max_digits=10, decimal_places=2)
@@ -106,6 +112,14 @@ class Order(models.Model):
     billing_same_as_shipping = models.BooleanField(default=True)
     shipping_method = models.CharField(max_length=20, default="standard")
     payment_method = models.CharField(max_length=120, blank=True)
+
+    payment_provider = models.CharField(max_length=40, default="mock", blank=True)
+    payment_reference = models.CharField(max_length=120, blank=True, db_index=True)
+    payment_transaction_id = models.CharField(max_length=120, blank=True)
+    payment_status = models.CharField(max_length=40, default="unpaid")
+    checkout_url = models.URLField(max_length=600, blank=True)
+    payment_data = models.JSONField(default=dict, blank=True)
+    is_stock_deducted = models.BooleanField(default=False)
 
     tracking_number = models.CharField(max_length=80, null=True, blank=True)
     carrier = models.CharField(max_length=60, null=True, blank=True)
@@ -145,3 +159,30 @@ class NewsletterSubscription(models.Model):
 
     def __str__(self):
         return self.email
+
+
+class PaymentWebhookEvent(models.Model):
+    STATUS_PROCESSED = "processed"
+    STATUS_IGNORED = "ignored"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_PROCESSED, "Processed"),
+        (STATUS_IGNORED, "Ignored"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    event_id = models.CharField(max_length=120, unique=True, db_index=True)
+    provider = models.CharField(max_length=40, default="paymongo")
+    event_type = models.CharField(max_length=80)
+    order_number = models.CharField(max_length=40, blank=True, db_index=True)
+    payment_reference = models.CharField(max_length=120, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PROCESSED)
+    payload = models.JSONField(default=dict)
+    error_message = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.provider}:{self.event_type}:{self.event_id}"

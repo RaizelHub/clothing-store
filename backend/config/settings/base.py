@@ -142,3 +142,11 @@ SIMPLE_JWT = {
 # --- CORS ------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=["http://localhost:5173"])
 CORS_ALLOW_CREDENTIALS = True
+
+# --- Payments --------------------------------------------------------------
+PAYMENTS_PROVIDER = env("PAYMENTS_PROVIDER", default="mock")
+PAYMONGO_SECRET_KEY = env("PAYMONGO_SECRET_KEY", default="")
+PAYMONGO_PUBLIC_KEY = env("PAYMONGO_PUBLIC_KEY", default="")
+PAYMONGO_WEBHOOK_SECRET = env("PAYMONGO_WEBHOOK_SECRET", default="")
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
+

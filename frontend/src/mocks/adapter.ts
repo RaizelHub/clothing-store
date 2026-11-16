@@ -465,7 +465,11 @@ function buildOrder(
     billing_address: body.billing_same_as_shipping ? body.shipping_address : body.billing_address,
     billing_same_as_shipping: body.billing_same_as_shipping,
     shipping_method: body.shipping_method,
-    payment_method: `${body.payment.provider} ${body.payment.method} •••• ${last4}`,
+    payment_method: `${body.payment.provider} ${body.payment.method ?? "card"} •••• ${last4}`,
+    payment_provider: body.payment.provider || "mock",
+    payment_reference: `mock_cs_${orderNumber}`,
+    payment_status: "paid",
+    is_stock_deducted: true,
     tracking_number: null,
     carrier: null,
     timeline: [
@@ -1041,6 +1045,25 @@ const routes: MockRoute[] = [
     handler: ({ db, me }) => {
       if (!me) fail(401, { detail: "Authentication credentials were not provided." });
       return ok(200, orderForUser(db, me.id));
+    },
+  },
+  {
+    method: "get",
+    pattern: /^\/orders\/(ST-\d+)\/status\/?$/,
+    handler: ({ db }, m) => {
+      const o = db.orders.find((item) => item.order_number === m[1]);
+      if (!o) fail(404, { detail: "Not found." });
+      return ok(200, {
+        order_number: o.order_number,
+        status: o.status,
+        payment_status: (o as { payment_status?: string }).payment_status || o.status,
+        payment_provider: (o as { payment_provider?: string }).payment_provider || "mock",
+        payment_method: o.payment_method,
+        total: o.total,
+        created_at: o.created_at,
+        items: o.items,
+        timeline: o.timeline,
+      });
     },
   },
   {
