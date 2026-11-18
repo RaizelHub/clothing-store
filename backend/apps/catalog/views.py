@@ -2,19 +2,30 @@ import re
 from datetime import timedelta
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Min, Q
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.exceptions import AuthenticationFailed, NotFound, PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.common.money import from_cents, placeholder_image
 from apps.orders.models import CartItem
 
+from .media_storage import (
+    MediaConfigurationError,
+    MediaUploadError,
+    MediaValidationError,
+    delete_managed_asset,
+    get_media_provider,
+    get_media_status,
+    validate_image_file,
+)
 from .models import (
     Category,
     Collection,
@@ -33,6 +44,7 @@ from .serializers import (
     ColorSerializer,
     InventoryRowSerializer,
     ProductDetailSerializer,
+    ProductImageSerializer,
     ProductSummarySerializer,
     ReviewSerializer,
     SizeSerializer,
@@ -216,7 +228,63 @@ def product_reviews(request, slug):
 # --- Admin: products -----------------------------------------------------------
 
 
+def _safe_delete_unreferenced_asset(storage_provider: str, public_id: str, exclude_id: int | None = None) -> None:
+    """Delete a managed asset only if no other ProductImage record still references its public_id."""
+    if not public_id or storage_provider not in (ProductImage.PROVIDER_CLOUDINARY, ProductImage.PROVIDER_LOCAL):
+        return
+    qs = ProductImage.objects.filter(public_id=public_id)
+    if exclude_id is not None:
+        qs = qs.exclude(pk=exclude_id)
+    if not qs.exists():
+        delete_managed_asset(storage_provider, public_id)
+
+
+def _normalize_gallery_positions(product: Product, ordered_ids: list[int] | None = None, primary_id: int | None = None) -> list[ProductImage]:
+    """
+    Safely re-index ProductImage positions to 0..N-1 inside a transaction using a two-phase
+    offset update so the (product, position) unique constraint never collides.
+    Also guarantees at most one primary image exists per product.
+    """
+    existing = list(product.images.order_by("position", "id"))
+    if not existing:
+        return []
+
+    if ordered_ids is not None:
+        by_id = {img.id: img for img in existing}
+        ordered = [by_id[i] for i in ordered_ids if i in by_id]
+        # Append any remaining images not explicitly listed
+        seen = {img.id for img in ordered}
+        ordered.extend([img for img in existing if img.id not in seen])
+    else:
+        ordered = existing
+
+    # Determine primary image
+    chosen_primary_id = primary_id
+    if chosen_primary_id is None:
+        current_primary = next((img.id for img in ordered if img.is_primary), None)
+        chosen_primary_id = current_primary if current_primary is not None else ordered[0].id
+
+    # Phase 1: move to temporary non-conflicting positions
+    offset = 10000
+    for idx, img in enumerate(ordered):
+        ProductImage.objects.filter(pk=img.pk).update(position=offset + idx)
+
+    # Phase 2: assign final contiguous positions and primary flag
+    for idx, img in enumerate(ordered):
+        is_prim = img.id == chosen_primary_id
+        ProductImage.objects.filter(pk=img.pk).update(position=idx, is_primary=is_prim)
+
+    return list(product.images.order_by("position", "id"))
+
+
+def _is_allowed_existing_or_placeholder_url(url: str) -> bool:
+    """Allow local /media/ paths or built-in SVG data-URL placeholders; block arbitrary remote URLs."""
+    trimmed = (url or "").strip()
+    return trimmed.startswith("/media/") or trimmed.startswith("data:image/svg+xml")
+
+
 def _create_images_for_colors(product: Product, colors: list[tuple[Color, str]]) -> None:
+    has_primary = product.images.filter(is_primary=True).exists()
     for color, hex_value in colors:
         if not product.images.filter(color=color).exists():
             position = product.images.count()
@@ -226,7 +294,10 @@ def _create_images_for_colors(product: Product, colors: list[tuple[Color, str]])
                 alt=f"{product.slug} in {color.name}",
                 color=color,
                 position=position,
+                is_primary=not has_primary and position == 0,
+                storage_provider=ProductImage.PROVIDER_EXTERNAL,
             )
+            has_primary = True
 
 
 def _apply_admin_input(product: Product, data: dict) -> None:
@@ -296,16 +367,60 @@ def _apply_admin_input(product: Product, data: dict) -> None:
                     old_v.delete()
 
     if "images" in data:
-        product.images.all().delete()
-        for pos, img_data in enumerate(data["images"]):
-            color = Color.objects.filter(pk=img_data["color_id"]).first() if img_data.get("color_id") else None
-            ProductImage.objects.create(
-                product=product,
-                image=img_data["image"],
-                alt=img_data.get("alt", "") or f"{product.name} image {pos + 1}",
-                color=color,
-                position=pos,
-            )
+        existing_by_id = {img.id: img for img in product.images.all()}
+        existing_by_url = {img.image: img for img in existing_by_id.values()}
+        kept_ids: list[int] = []
+        explicit_primary_id: int | None = None
+
+        with transaction.atomic():
+            # Shift existing images to temporary positions so updates never collide
+            for idx, existing_img in enumerate(existing_by_id.values()):
+                ProductImage.objects.filter(pk=existing_img.pk).update(position=20000 + idx)
+
+            for pos, img_data in enumerate(data["images"]):
+                color = Color.objects.filter(pk=img_data["color_id"]).first() if img_data.get("color_id") else None
+                raw_id = img_data.get("id")
+                raw_url = (img_data.get("image") or "").strip()
+
+                matched_img = existing_by_id.get(raw_id) if raw_id else existing_by_url.get(raw_url)
+                if matched_img:
+                    matched_img.alt = img_data.get("alt", "") or matched_img.alt or f"{product.name} image {pos + 1}"
+                    matched_img.color = color
+                    matched_img.position = pos
+                    matched_img.save(update_fields=["alt", "color", "position"])
+                    kept_ids.append(matched_img.id)
+                    if img_data.get("is_primary"):
+                        explicit_primary_id = matched_img.id
+                else:
+                    # Reject arbitrary untrusted remote URLs; require secure file uploads
+                    if not _is_allowed_existing_or_placeholder_url(raw_url):
+                        raise ValidationError(
+                            {"images": ["Arbitrary remote image URLs are not permitted. Upload image files through the media upload endpoint."]}
+                        )
+                    created_img = ProductImage.objects.create(
+                        product=product,
+                        image=raw_url,
+                        alt=img_data.get("alt", "") or f"{product.name} image {pos + 1}",
+                        color=color,
+                        position=pos,
+                        storage_provider=ProductImage.PROVIDER_LOCAL if raw_url.startswith("/media/") else ProductImage.PROVIDER_EXTERNAL,
+                    )
+                    kept_ids.append(created_img.id)
+                    if img_data.get("is_primary"):
+                        explicit_primary_id = created_img.id
+
+            # Remove images omitted from the updated list & collect managed assets for cleanup
+            removed_assets = []
+            for old_id, old_img in existing_by_id.items():
+                if old_id not in kept_ids:
+                    removed_assets.append((old_img.storage_provider, old_img.public_id))
+                    old_img.delete()
+
+            _normalize_gallery_positions(product, ordered_ids=kept_ids, primary_id=explicit_primary_id)
+
+        # Safely clean up removed assets only after DB commit succeeds
+        for prov, pub_id in removed_assets:
+            _safe_delete_unreferenced_asset(prov, pub_id)
     elif "colors" in data and product.images.count() == 0:
         colors_with_hex = [(Color.objects.get(pk=i["color_id"]), i["hex"]) for i in data["colors"]]
         _create_images_for_colors(product, colors_with_hex)
@@ -354,13 +469,288 @@ def admin_product_detail(request, pk):
     if request.method == "GET":
         return Response(ProductDetailSerializer(product).data)
     if request.method == "DELETE":
-        CartItem.objects.filter(variant__product=product).delete()
-        product.delete()
+        managed_assets = [
+            (img.storage_provider, img.public_id)
+            for img in product.images.all()
+            if img.public_id
+        ]
+        with transaction.atomic():
+            CartItem.objects.filter(variant__product=product).delete()
+            product.delete()
+        for prov, pub_id in managed_assets:
+            _safe_delete_unreferenced_asset(prov, pub_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
     ser = AdminProductInputSerializer(data=request.data, partial=True)
     ser.is_valid(raise_exception=True)
     _apply_admin_input(product, ser.validated_data)
     return Response(ProductDetailSerializer(product_qs().get(pk=product.pk)).data)
+
+
+# --- Admin: product media & Cloudinary uploads -----------------------------------
+
+
+def _parse_bool_flag(raw) -> bool:
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in ("true", "1", "yes", "on")
+
+
+def _parse_optional_color(raw) -> Color | None:
+    if raw in (None, "", "null", "none"):
+        return None
+    try:
+        cid = int(raw)
+    except (TypeError, ValueError):
+        raise ValidationError({"color_id": ["Invalid color ID."]})
+    color = Color.objects.filter(pk=cid).first()
+    if not color:
+        raise ValidationError({"color_id": ["Color not found."]})
+    return color
+
+
+@api_view(["GET"])
+def admin_media_config(request):
+    """Return non-sensitive media storage status for admin product editor."""
+    _require_staff(request)
+    return Response(get_media_status())
+
+
+@api_view(["GET", "POST"])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
+def admin_product_images_view(request, product_id):
+    """
+    GET  /api/admin/products/<product_id>/images/ -> list product gallery images
+    POST /api/admin/products/<product_id>/images/ -> securely upload one or multiple image files
+    """
+    _require_staff(request)
+    product = Product.objects.filter(pk=product_id).first()
+    if not product:
+        raise NotFound("Product not found.")
+
+    if request.method == "GET":
+        imgs = product.images.order_by("position", "id")
+        return Response(ProductImageSerializer(imgs, many=True).data)
+
+    # Explicitly block arbitrary remote URL uploads on the upload endpoint
+    if not request.FILES:
+        if request.data.get("url") or request.data.get("image"):
+            raise ValidationError(
+                {"file": ["Arbitrary remote URL uploads are not permitted. Upload an image file instead."]}
+            )
+        raise ValidationError({"file": ["An image file is required."]})
+
+    uploaded_files = request.FILES.getlist("files") or request.FILES.getlist("file")
+    if not uploaded_files:
+        raise ValidationError({"file": ["No image file found in request."]})
+
+    color = _parse_optional_color(request.data.get("color_id"))
+    alt_input = str(request.data.get("alt", "")).strip()[:220]
+    make_primary = _parse_bool_flag(request.data.get("is_primary"))
+
+    # Step 1: Validate ALL files before calling external storage provider
+    validated_batch = []
+    for f in uploaded_files:
+        try:
+            validated_batch.append(validate_image_file(f))
+        except MediaValidationError as exc:
+            raise ValidationError({"file": [str(exc)]})
+
+    # Step 2: Resolve provider (fails clearly if Cloudinary enabled with missing credentials)
+    try:
+        provider = get_media_provider()
+    except MediaConfigurationError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    # Step 3: Upload files and associate atomically; roll back remote assets on failure
+    uploaded_assets = []
+    created_records: list[ProductImage] = []
+    try:
+        for validated in validated_batch:
+            asset = provider.upload_image(
+                validated,
+                product_id=product.id,
+                product_slug=product.slug,
+                color_id=color.id if color else None,
+            )
+            uploaded_assets.append(asset)
+
+        with transaction.atomic():
+            base_pos = (product.images.order_by("-position").values_list("position", flat=True).first())
+            next_pos = 0 if base_pos is None else base_pos + 1
+            had_existing = product.images.exists()
+
+            for idx, asset in enumerate(uploaded_assets):
+                alt_text = alt_input or f"{product.name} — view {next_pos + idx + 1}"
+                rec = ProductImage.objects.create(
+                    product=product,
+                    image=asset.url,
+                    alt=alt_text,
+                    color=color,
+                    position=next_pos + idx,
+                    is_primary=False,
+                    public_id=asset.public_id,
+                    storage_provider=asset.storage_provider,
+                    width=asset.width,
+                    height=asset.height,
+                    format=asset.format,
+                    bytes=asset.bytes,
+                )
+                created_records.append(rec)
+
+            primary_id = None
+            if make_primary and created_records:
+                primary_id = created_records[0].id
+            elif not had_existing and created_records:
+                primary_id = created_records[0].id
+
+            _normalize_gallery_positions(product, primary_id=primary_id)
+    except MediaUploadError as exc:
+        for asset in uploaded_assets:
+            delete_managed_asset(asset.storage_provider, asset.public_id)
+        return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+    except Exception:
+        # Clean up any uploaded assets if DB association fails
+        for asset in uploaded_assets:
+            delete_managed_asset(asset.storage_provider, asset.public_id)
+        raise
+
+    refreshed = list(ProductImage.objects.filter(pk__in=[r.pk for r in created_records]).order_by("position", "id"))
+    if len(refreshed) == 1 and "files" not in request.FILES:
+        return Response(ProductImageSerializer(refreshed[0]).data, status=status.HTTP_201_CREATED)
+    return Response(ProductImageSerializer(refreshed, many=True).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["PATCH", "DELETE"])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
+def admin_product_image_detail(request, product_id, image_id):
+    """
+    PATCH  /api/admin/products/<product_id>/images/<image_id>/ -> update metadata or replace file safely
+    DELETE /api/admin/products/<product_id>/images/<image_id>/ -> delete image record and clean up unreferenced asset
+    """
+    _require_staff(request)
+    product = Product.objects.filter(pk=product_id).first()
+    if not product:
+        raise NotFound("Product not found.")
+
+    img = ProductImage.objects.filter(pk=image_id, product=product).first()
+    if not img:
+        raise NotFound("Image not found for this product.")
+
+    if request.method == "DELETE":
+        old_provider = img.storage_provider
+        old_public_id = img.public_id
+        was_primary = img.is_primary
+        with transaction.atomic():
+            img.delete()
+            remaining = _normalize_gallery_positions(
+                product,
+                primary_id=None if was_primary else None,
+            )
+        _safe_delete_unreferenced_asset(old_provider, old_public_id)
+        return Response(
+            {
+                "deleted_id": image_id,
+                "images": ProductImageSerializer(remaining, many=True).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    # PATCH: optionally replace image binary AND/OR update alt, color_id, is_primary
+    if "url" in request.data or "image" in request.data:
+        if not request.FILES:
+            raise ValidationError(
+                {"file": ["Direct URL replacement is not permitted. Upload an image file to replace this asset."]}
+            )
+
+    new_file = request.FILES.get("file")
+    new_asset = None
+    old_provider = img.storage_provider
+    old_public_id = img.public_id
+
+    if new_file is not None:
+        try:
+            validated = validate_image_file(new_file)
+        except MediaValidationError as exc:
+            raise ValidationError({"file": [str(exc)]})
+
+        try:
+            provider = get_media_provider()
+        except MediaConfigurationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        try:
+            target_color = (
+                _parse_optional_color(request.data.get("color_id"))
+                if "color_id" in request.data
+                else img.color
+            )
+            new_asset = provider.upload_image(
+                validated,
+                product_id=product.id,
+                product_slug=product.slug,
+                color_id=target_color.id if target_color else None,
+            )
+        except MediaUploadError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+    try:
+        with transaction.atomic():
+            if "alt" in request.data:
+                img.alt = str(request.data.get("alt") or "").strip()[:220]
+            if "color_id" in request.data:
+                img.color = _parse_optional_color(request.data.get("color_id"))
+            if new_asset is not None:
+                img.image = new_asset.url
+                img.public_id = new_asset.public_id
+                img.storage_provider = new_asset.storage_provider
+                img.width = new_asset.width
+                img.height = new_asset.height
+                img.format = new_asset.format
+                img.bytes = new_asset.bytes
+            img.save()
+
+            if "is_primary" in request.data and _parse_bool_flag(request.data.get("is_primary")):
+                _normalize_gallery_positions(product, primary_id=img.id)
+    except Exception:
+        # Roll back newly uploaded asset so DB failure leaves zero orphans
+        if new_asset is not None:
+            delete_managed_asset(new_asset.storage_provider, new_asset.public_id)
+        raise
+
+    # Only delete the old asset AFTER replacement has been committed to the database
+    if new_asset is not None and old_public_id and old_public_id != new_asset.public_id:
+        _safe_delete_unreferenced_asset(old_provider, old_public_id, exclude_id=img.pk)
+
+    img.refresh_from_db()
+    return Response(ProductImageSerializer(img).data, status=status.HTTP_200_OK)
+
+
+@api_view(["POST"])
+def admin_product_images_reorder(request, product_id):
+    """POST /api/admin/products/<product_id>/images/reorder/ with {'image_ids': [...]}."""
+    _require_staff(request)
+    product = Product.objects.filter(pk=product_id).first()
+    if not product:
+        raise NotFound("Product not found.")
+
+    raw_ids = request.data.get("image_ids")
+    if not isinstance(raw_ids, list) or not raw_ids:
+        raise ValidationError({"image_ids": ["A non-empty list of image IDs is required."]})
+
+    try:
+        ordered_ids = [int(x) for x in raw_ids]
+    except (TypeError, ValueError):
+        raise ValidationError({"image_ids": ["All image IDs must be integers."]})
+
+    valid_ids = set(product.images.values_list("id", flat=True))
+    foreign_ids = [i for i in ordered_ids if i not in valid_ids]
+    if foreign_ids:
+        raise ValidationError({"image_ids": ["One or more image IDs do not belong to this product."]})
+
+    with transaction.atomic():
+        reordered = _normalize_gallery_positions(product, ordered_ids=ordered_ids)
+
+    return Response(ProductImageSerializer(reordered, many=True).data, status=status.HTTP_200_OK)
 
 
 # --- Admin: inventory ------------------------------------------------------------

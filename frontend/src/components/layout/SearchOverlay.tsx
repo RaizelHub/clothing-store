@@ -6,6 +6,7 @@ import { useUIStore } from "@/store/useUIStore";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { getProducts } from "@/api/products";
 import { formatMoney } from "@/lib/format";
+import { getImageUrl, getProductCardImages } from "@/lib/images";
 import { containDialogFocus } from "@/lib/dialog";
 
 const TRENDING_SEARCHES = [
@@ -167,7 +168,8 @@ export function SearchOverlay() {
             {results.length > 0 ? (
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
                 {results.slice(0, 6).map((product) => {
-                  const image = product.images[0]?.image;
+                  const primary = getProductCardImages(product.images, null).primary;
+                  const image = getImageUrl(primary, "thumbnail");
                   return (
                     <Link
                       key={product.id}
@@ -179,7 +181,9 @@ export function SearchOverlay() {
                         {image && (
                           <img
                             src={image}
-                            alt={product.name}
+                            alt={primary?.alt || product.name}
+                            loading="lazy"
+                            decoding="async"
                             className="size-full object-cover group-hover:scale-105 transition-transform duration-500"
                           />
                         )}

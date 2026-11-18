@@ -5,9 +5,11 @@ import type {
   Coupon,
   Customer,
   DashboardStats,
+  MediaConfigStatus,
   Order,
   OrderStatus,
   ProductDetail,
+  ProductImage,
   ProductSummary,
   Review,
   ReviewStatus,
@@ -79,9 +81,11 @@ export interface VariantInput {
 }
 
 export interface ProductImageInput {
-  image: string;
+  id?: number;
+  image?: string;
   alt?: string;
   color_id?: number | null;
+  is_primary?: boolean;
 }
 
 export interface ProductInput {
@@ -112,6 +116,114 @@ export async function updateAdminProduct(id: number, payload: Partial<ProductInp
 
 export async function deleteAdminProduct(id: number): Promise<void> {
   await apiClient.delete(`/admin/products/${id}/`);
+}
+
+// --- Product Media & Gallery -----------------------------------------------
+
+export async function getMediaConfig(): Promise<MediaConfigStatus> {
+  const { data } = await apiClient.get<MediaConfigStatus>("/admin/media/config/");
+  return data;
+}
+
+export async function uploadProductImages(
+  productId: number,
+  files: File[],
+  options?: {
+    alt?: string;
+    color_id?: number | null;
+    is_primary?: boolean;
+    onProgress?: (percent: number) => void;
+  }
+): Promise<ProductImage[]> {
+  const formData = new FormData();
+  files.forEach((f) => formData.append("files", f));
+  if (options?.alt) formData.append("alt", options.alt);
+  if (options?.color_id !== undefined && options.color_id !== null) {
+    formData.append("color_id", String(options.color_id));
+  }
+  if (options?.is_primary) formData.append("is_primary", "true");
+
+  const { data } = await apiClient.post<ProductImage | ProductImage[]>(
+    `/admin/products/${productId}/images/`,
+    formData,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+      onUploadProgress: (evt) => {
+        if (options?.onProgress && evt.total) {
+          options.onProgress(Math.min(100, Math.round((evt.loaded * 100) / evt.total)));
+        }
+      },
+    }
+  );
+  return Array.isArray(data) ? data : [data];
+}
+
+export async function updateProductImage(
+  productId: number,
+  imageId: number,
+  payload: {
+    alt?: string;
+    color_id?: number | null;
+    is_primary?: boolean;
+    file?: File;
+  },
+  onProgress?: (percent: number) => void
+): Promise<ProductImage> {
+  if (payload.file) {
+    const formData = new FormData();
+    formData.append("file", payload.file);
+    if (payload.alt !== undefined) formData.append("alt", payload.alt);
+    if (payload.color_id !== undefined) {
+      formData.append("color_id", payload.color_id === null ? "" : String(payload.color_id));
+    }
+    if (payload.is_primary !== undefined) {
+      formData.append("is_primary", payload.is_primary ? "true" : "false");
+    }
+    const { data } = await apiClient.patch<ProductImage>(
+      `/admin/products/${productId}/images/${imageId}/`,
+      formData,
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (evt) => {
+          if (onProgress && evt.total) {
+            onProgress(Math.min(100, Math.round((evt.loaded * 100) / evt.total)));
+          }
+        },
+      }
+    );
+    return data;
+  }
+
+  const { data } = await apiClient.patch<ProductImage>(
+    `/admin/products/${productId}/images/${imageId}/`,
+    {
+      ...(payload.alt !== undefined ? { alt: payload.alt } : {}),
+      ...(payload.color_id !== undefined ? { color_id: payload.color_id } : {}),
+      ...(payload.is_primary !== undefined ? { is_primary: payload.is_primary } : {}),
+    }
+  );
+  return data;
+}
+
+export async function deleteProductImage(
+  productId: number,
+  imageId: number
+): Promise<{ deleted_id: number; images: ProductImage[] }> {
+  const { data } = await apiClient.delete<{ deleted_id: number; images: ProductImage[] }>(
+    `/admin/products/${productId}/images/${imageId}/`
+  );
+  return data;
+}
+
+export async function reorderProductImages(
+  productId: number,
+  imageIds: number[]
+): Promise<ProductImage[]> {
+  const { data } = await apiClient.post<ProductImage[]>(
+    `/admin/products/${productId}/images/reorder/`,
+    { image_ids: imageIds }
+  );
+  return data;
 }
 
 // --- Inventory -------------------------------------------------------------

@@ -367,8 +367,15 @@ def place_order(request):
     )
 
     for item in items:
+        from apps.catalog.media_storage import build_product_image_urls
+
         v = locked_variants[item.variant_id]
-        img = v.product.images.filter(color=v.color).first() or v.product.images.first()
+        img = (
+            v.product.images.filter(color=v.color, is_primary=True).first()
+            or v.product.images.filter(color=v.color).first()
+            or v.product.images.filter(is_primary=True).first()
+            or v.product.images.first()
+        )
         OrderItem.objects.create(
             order=order,
             product=v.product,
@@ -378,7 +385,7 @@ def place_order(request):
             size_name=v.size.name,
             unit_price=v.effective_price(),
             quantity=item.quantity,
-            image=img.image if img else "",
+            image=build_product_image_urls(img)["thumbnail"] if img else "",
         )
         ProductVariant.objects.filter(pk=v.pk).update(stock=F("stock") - item.quantity)
 

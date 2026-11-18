@@ -37,9 +37,29 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class ProductImageSerializer(serializers.ModelSerializer):
+    urls = serializers.SerializerMethodField()
+
     class Meta:
         model = ProductImage
-        fields = ["id", "image", "alt", "color", "position"]
+        fields = [
+            "id",
+            "image",
+            "alt",
+            "color",
+            "position",
+            "is_primary",
+            "public_id",
+            "storage_provider",
+            "width",
+            "height",
+            "format",
+            "urls",
+        ]
+
+    def get_urls(self, obj):
+        from .media_storage import build_product_image_urls
+
+        return build_product_image_urls(obj)
 
 
 class VariantSummarySerializer(serializers.ModelSerializer):
@@ -242,9 +262,11 @@ class AdminColorInputSerializer(serializers.Serializer):
 
 
 class AdminProductImageInputSerializer(serializers.Serializer):
-    image = serializers.CharField(max_length=600)
+    id = serializers.IntegerField(required=False, allow_null=True)
+    image = serializers.CharField(max_length=1000, required=False, allow_blank=True)
     alt = serializers.CharField(max_length=220, required=False, allow_blank=True)
     color_id = serializers.IntegerField(required=False, allow_null=True)
+    is_primary = serializers.BooleanField(required=False)
 
 
 class AdminProductInputSerializer(serializers.Serializer):

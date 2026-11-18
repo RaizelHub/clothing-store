@@ -34,12 +34,36 @@ export interface Collection {
   product_count?: number;
 }
 
+export interface ProductImageUrls {
+  thumbnail: string;
+  card: string;
+  detail: string;
+  large: string;
+  mobile: string;
+  admin_preview: string;
+}
+
 export interface ProductImage {
   id: number;
   image: string;
   alt: string;
   color: number | null;
   position: number;
+  is_primary?: boolean;
+  public_id?: string;
+  storage_provider?: "cloudinary" | "local" | "external";
+  width?: number | null;
+  height?: number | null;
+  format?: string;
+  urls?: ProductImageUrls;
+}
+
+export interface MediaConfigStatus {
+  provider: "cloudinary" | "local" | "mock";
+  configured: boolean;
+  max_file_size_mb: number;
+  allowed_formats: string[];
+  error: string | null;
 }
 
 export interface VariantSummary {

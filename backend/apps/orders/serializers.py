@@ -26,12 +26,19 @@ class CartItemSerializer(serializers.ModelSerializer):
         fields = ["id", "variant", "product_name", "product_slug", "image", "unit_price", "quantity", "available_stock"]
 
     def get_image(self, obj):
+        from apps.catalog.media_storage import build_product_image_urls
+
         v = obj.variant
         images = list(v.product.images.all())
-        for img in images:
-            if img.color_id == v.color_id:
-                return img.image
-        return images[0].image if images else None
+        if not images:
+            return None
+        chosen = (
+            next((i for i in images if i.color_id == v.color_id and i.is_primary), None)
+            or next((i for i in images if i.color_id == v.color_id), None)
+            or next((i for i in images if i.is_primary), None)
+            or images[0]
+        )
+        return build_product_image_urls(chosen)["thumbnail"]
 
     def get_unit_price(self, obj):
         return obj.variant.effective_price_str()

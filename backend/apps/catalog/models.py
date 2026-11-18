@@ -91,11 +91,28 @@ class ProductVariant(models.Model):
 
 
 class ProductImage(models.Model):
+    PROVIDER_CLOUDINARY = "cloudinary"
+    PROVIDER_LOCAL = "local"
+    PROVIDER_EXTERNAL = "external"
+    PROVIDER_CHOICES = [
+        (PROVIDER_CLOUDINARY, "Cloudinary"),
+        (PROVIDER_LOCAL, "Local"),
+        (PROVIDER_EXTERNAL, "External"),
+    ]
+
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="images")
-    image = models.URLField(max_length=600)
+    image = models.CharField(max_length=1000)
     alt = models.CharField(max_length=220, blank=True)
     color = models.ForeignKey(Color, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     position = models.PositiveIntegerField(default=0)
+    is_primary = models.BooleanField(default=False)
+    public_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    storage_provider = models.CharField(max_length=20, choices=PROVIDER_CHOICES, default=PROVIDER_EXTERNAL)
+    width = models.PositiveIntegerField(null=True, blank=True)
+    height = models.PositiveIntegerField(null=True, blank=True)
+    format = models.CharField(max_length=20, blank=True, default="")
+    bytes = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
 
     class Meta:
         ordering = ["position", "id"]

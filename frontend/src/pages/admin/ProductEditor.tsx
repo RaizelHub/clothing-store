@@ -1,14 +1,25 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Image as ImageIcon } from "lucide-react";
-import { createAdminProduct, getAdminProduct, updateAdminProduct, type ProductInput } from "@/api/admin";
+import { Plus, Trash2 } from "lucide-react";
+import {
+  createAdminProduct,
+  getAdminProduct,
+  updateAdminProduct,
+  uploadProductImages,
+  type ProductInput,
+} from "@/api/admin";
 import { getCategories, getColors, getSizes } from "@/api/products";
+import {
+  ProductImageGalleryEditor,
+  type QueuedLocalImage,
+} from "@/components/admin/ProductImageGalleryEditor";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Textarea, Select, Checkbox } from "@/components/ui/fields";
 import { Notice, Skeleton } from "@/components/ui/misc";
 import { formatMoney } from "@/lib/format";
 import { getApiErrorMessage } from "@/lib/errors";
+import type { ProductImage } from "@/types/api";
 
 interface Row {
   key: string;
@@ -17,13 +28,6 @@ interface Row {
   sku: string;
   price_override_cents: number | null;
   stock: number;
-}
-
-interface ImageRow {
-  key: string;
-  image: string;
-  alt: string;
-  color_id: number | null;
 }
 
 let rowKey = 0;
@@ -46,6 +50,8 @@ export function ProductEditor() {
   const { data: colors } = useQuery({ queryKey: ["lookups", "colors"], queryFn: getColors });
   const { data: sizes } = useQuery({ queryKey: ["lookups", "sizes"], queryFn: getSizes });
 
+  const hydratedIdRef = useRef<number | null>(null);
+
   const [name, setName] = useState("");
   const [tagline, setTagline] = useState("");
   const [description, setDescription] = useState("");
@@ -57,16 +63,19 @@ export function ProductEditor() {
   const [isFeatured, setIsFeatured] = useState(false);
   const [isNewFlag, setIsNewFlag] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
-  const [images, setImages] = useState<ImageRow[]>([]);
-  const [newImageUrl, setNewImageUrl] = useState("");
-  const [newImageAlt, setNewImageAlt] = useState("");
-  const [newImageColor, setNewImageColor] = useState<number | "">("");
+  const [images, setImages] = useState<ProductImage[]>([]);
+  const [queuedFiles, setQueuedFiles] = useState<QueuedLocalImage[]>([]);
   const [pendingColor, setPendingColor] = useState(1);
   const [pendingSize, setPendingSize] = useState(1);
   const [error, setError] = useState<string | null>(null);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
+  // Hydrate form fields only once per product ID so gallery edits never discard unsaved form edits
   useEffect(() => {
     if (!existing) return;
+    if (hydratedIdRef.current === existing.id) return;
+    hydratedIdRef.current = existing.id;
+
     setName(existing.name);
     setTagline(existing.tagline);
     setDescription(existing.description);
@@ -87,38 +96,8 @@ export function ProductEditor() {
         stock: v.stock,
       }))
     );
-    if (existing.images && existing.images.length > 0) {
-      setImages(
-        existing.images.map((img, idx) => ({
-          key: `img-${img.id || idx}-${idx}`,
-          image: img.image,
-          alt: img.alt || "",
-          color_id: img.color ? (typeof img.color === "object" ? (img.color as { id: number }).id : Number(img.color)) : null,
-        }))
-      );
-    }
+    setImages(existing.images ?? []);
   }, [existing]);
-
-  const addImage = () => {
-    if (!newImageUrl.trim()) return;
-    setImages([
-      ...images,
-      {
-        key: `img-new-${Date.now()}`,
-        image: newImageUrl.trim(),
-        alt: newImageAlt.trim(),
-        color_id: newImageColor === "" ? null : Number(newImageColor),
-      },
-    ]);
-    setNewImageUrl("");
-    setNewImageAlt("");
-    setNewImageColor("");
-  };
-
-  const removeImage = (key: string) => setImages(images.filter((img) => img.key !== key));
-
-  const updateImage = (key: string, patch: Partial<ImageRow>) =>
-    setImages(images.map((img) => (img.key === key ? { ...img, ...patch } : img)));
 
   const addRow = () => {
     if (!colors || !sizes) return;
@@ -129,7 +108,17 @@ export function ProductEditor() {
     let sku = autoSku;
     let n = 2;
     while (rows.some((r) => r.sku === sku)) sku = `${autoSku}${n++}`;
-    setRows([...rows, { key: newRowKey(), color_id: pendingColor, size_id: pendingSize, sku, price_override_cents: null, stock: 10 }]);
+    setRows([
+      ...rows,
+      {
+        key: newRowKey(),
+        color_id: pendingColor,
+        size_id: pendingSize,
+        sku,
+        price_override_cents: null,
+        stock: 10,
+      },
+    ]);
   };
 
   const removeRow = (key: string) => setRows(rows.filter((r) => r.key !== key));
@@ -161,20 +150,47 @@ export function ProductEditor() {
       stock: r.stock,
     })),
     colors: usedColors.map((c) => ({ color_id: c.id, hex: c.hex })),
-    images: images.map((img) => ({
-      image: img.image.trim(),
-      alt: img.alt.trim(),
-      color_id: img.color_id || null,
-    })),
   });
 
   const save = useMutation({
-    mutationFn: () => (editing ? updateAdminProduct(Number(id), payload()) : createAdminProduct(payload())),
+    mutationFn: async () => {
+      setError(null);
+      setSavedNotice(null);
+      const product = editing
+        ? await updateAdminProduct(Number(id), payload())
+        : await createAdminProduct(payload());
+
+      // Upload any queued images associated with this product
+      if (queuedFiles.length > 0) {
+        const uploadedAll: ProductImage[] = [];
+        for (const item of queuedFiles) {
+          const uploaded = await uploadProductImages(product.id, [item.file], {
+            alt: item.alt,
+            color_id: item.color_id,
+            is_primary: item.is_primary,
+          });
+          uploadedAll.push(...uploaded);
+          URL.revokeObjectURL(item.previewUrl);
+        }
+        setQueuedFiles([]);
+        const refreshed = await getAdminProduct(product.id);
+        setImages(refreshed.images ?? uploadedAll);
+        return refreshed;
+      }
+
+      return product;
+    },
     onSuccess: (product) => {
+      queryClient.setQueryData(["admin", "products", product.id], product);
       queryClient.invalidateQueries({ queryKey: ["admin", "products"] });
       queryClient.invalidateQueries({ queryKey: ["admin", "inventory"] });
       queryClient.invalidateQueries({ queryKey: ["admin", "stats"] });
-      navigate(`/admin/products/${product.id}/edit`);
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      setSavedNotice(editing ? "Product changes saved." : "Product created.");
+      if (!editing) {
+        hydratedIdRef.current = product.id;
+        navigate(`/admin/products/${product.id}/edit`);
+      }
     },
     onError: (e) => setError(getApiErrorMessage(e)),
   });
@@ -201,6 +217,9 @@ export function ProductEditor() {
           {editing ? "Save changes" : "Create product"}
         </Button>
       </header>
+
+      {savedNotice && <Notice tone="success">{savedNotice}</Notice>}
+      {error && <Notice tone="error">{error}</Notice>}
 
       <section className="space-y-5 border border-stone-200 p-6">
         <h2 className="text-xs uppercase tracking-widest text-stone-500">Details</h2>
@@ -257,134 +276,18 @@ export function ProductEditor() {
         </div>
       </section>
 
-      {/* Product Images Section */}
-      <section className="space-y-5 border border-stone-200 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="flex items-center gap-1.5 text-xs uppercase tracking-widest text-stone-500">
-              <ImageIcon size={14} /> Product Images & Media
-            </h2>
-            <p className="mt-0.5 text-xs text-stone-400">
-              Add image URLs for this product (Unsplash, CDN, or local media). Associate images with colors to change photos on color selection.
-            </p>
-          </div>
-          <span className="text-xs font-mono text-stone-500">
-            {images.length} {images.length === 1 ? "image" : "images"}
-          </span>
-        </div>
-
-        {/* Add new image row */}
-        <div className="border border-stone-200/80 bg-stone-50/50 p-4 space-y-3">
-          <div className="text-xs font-medium uppercase tracking-wider text-stone-600">Add New Image</div>
-          <div className="grid gap-3 sm:grid-cols-[1fr_180px_160px_auto] items-end">
-            <Field label="Image URL">
-              <Input
-                value={newImageUrl}
-                onChange={(e) => setNewImageUrl(e.target.value)}
-                placeholder="https://images.unsplash.com/... or /media/..."
-              />
-            </Field>
-            <Field label="Alt description" optional>
-              <Input
-                value={newImageAlt}
-                onChange={(e) => setNewImageAlt(e.target.value)}
-                placeholder="e.g. Front view"
-              />
-            </Field>
-            <Field label="Color link" optional>
-              <Select
-                value={newImageColor}
-                onChange={(e) => setNewImageColor(e.target.value === "" ? "" : Number(e.target.value))}
-              >
-                <option value="">All colors (General)</option>
-                {colors?.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Button size="sm" type="button" onClick={addImage} disabled={!newImageUrl.trim()}>
-              <Plus size={14} strokeWidth={1.5} /> Add image
-            </Button>
-          </div>
-        </div>
-
-        {/* List of images */}
-        {images.length === 0 ? (
-          <div className="py-6 text-center text-xs text-stone-400 border border-dashed border-stone-200">
-            No custom images added yet. (SVG placeholders are used automatically if left empty).
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {images.map((img, idx) => (
-              <div key={img.key} className="flex gap-3 border border-stone-200 bg-paper p-3">
-                <div className="relative h-24 w-20 shrink-0 overflow-hidden bg-stone-100 border border-stone-200">
-                  <img
-                    src={img.image}
-                    alt={img.alt || "Product preview"}
-                    className="h-full w-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.opacity = "0.2";
-                    }}
-                  />
-                  {idx === 0 && (
-                    <span className="absolute bottom-0 inset-x-0 bg-ink text-paper text-[8px] text-center font-mono uppercase tracking-wider py-0.5">
-                      Cover
-                    </span>
-                  )}
-                </div>
-                <div className="flex-1 space-y-2 min-w-0">
-                  <Field label="Image URL">
-                    <Input
-                      value={img.image}
-                      onChange={(e) => updateImage(img.key, { image: e.target.value })}
-                      className="!px-2 !py-1 text-xs font-mono"
-                      placeholder="Image URL"
-                    />
-                  </Field>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Field label="Alt">
-                      <Input
-                        value={img.alt}
-                        onChange={(e) => updateImage(img.key, { alt: e.target.value })}
-                        className="!px-2 !py-1 text-xs"
-                        placeholder="Alt description"
-                      />
-                    </Field>
-                    <Field label="Color">
-                      <Select
-                        value={img.color_id ?? ""}
-                        onChange={(e) =>
-                          updateImage(img.key, {
-                            color_id: e.target.value === "" ? null : Number(e.target.value),
-                          })
-                        }
-                        className="!px-2 !py-1 text-xs"
-                      >
-                        <option value="">All colors</option>
-                        {colors?.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeImage(img.key)}
-                  className="self-start text-stone-400 hover:text-accent p-1 transition-colors"
-                  aria-label="Remove image"
-                >
-                  <Trash2 size={15} strokeWidth={1.5} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      {/* Product Images & Cloudinary Gallery */}
+      <ProductImageGalleryEditor
+        productId={editing ? Number(id) : undefined}
+        colors={colors ?? []}
+        images={images}
+        onImagesChange={(next) => {
+          setImages(next);
+          queryClient.invalidateQueries({ queryKey: ["products"] });
+        }}
+        queuedFiles={queuedFiles}
+        onQueuedFilesChange={setQueuedFiles}
+      />
 
       <section className="border border-stone-200 p-6">
         <h2 className="text-xs uppercase tracking-widest text-stone-500">Variants</h2>
@@ -446,7 +349,9 @@ export function ProductEditor() {
                           placeholder={basePrice ? formatMoney(basePrice) : "Fallback"}
                           value={r.price_override_cents !== null ? (r.price_override_cents / 100).toFixed(2) : ""}
                           onChange={(e) =>
-                            updateRow(r.key, { price_override_cents: e.target.value === "" ? null : Math.round(parseFloat(e.target.value) * 100) })
+                            updateRow(r.key, {
+                              price_override_cents: e.target.value === "" ? null : Math.round(parseFloat(e.target.value) * 100),
+                            })
                           }
                           className="!px-2 !py-1.5 text-xs"
                         />
@@ -476,8 +381,6 @@ export function ProductEditor() {
           SKUs follow the {colorCode("Black")}‑{colorCode("Stone")} pattern from the seed: STU-{colorCode("Black")}-S etc.
         </p>
       </section>
-
-      {error && <Notice tone="error">{error}</Notice>}
     </div>
   );
 }

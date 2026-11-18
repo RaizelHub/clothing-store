@@ -150,3 +150,13 @@ PAYMONGO_PUBLIC_KEY = env("PAYMONGO_PUBLIC_KEY", default="")
 PAYMONGO_WEBHOOK_SECRET = env("PAYMONGO_WEBHOOK_SECRET", default="")
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
 
+# --- Media Storage (Cloudinary / Local) ------------------------------------
+MEDIA_STORAGE_PROVIDER = env("MEDIA_STORAGE_PROVIDER", default="local")
+CLOUDINARY_CLOUD_NAME = env("CLOUDINARY_CLOUD_NAME", default="")
+CLOUDINARY_API_KEY = env("CLOUDINARY_API_KEY", default="")
+CLOUDINARY_API_SECRET = env("CLOUDINARY_API_SECRET", default="")
+CLOUDINARY_SECURE = env.bool("CLOUDINARY_SECURE", default=True)
+CLOUDINARY_UPLOAD_FOLDER = env("CLOUDINARY_UPLOAD_FOLDER", default="studio/products")
+MEDIA_MAX_UPLOAD_SIZE_MB = env.int("MEDIA_MAX_UPLOAD_SIZE_MB", default=8)
+
+

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/fields";
 import { Badge, Skeleton } from "@/components/ui/misc";
 import { formatMoney } from "@/lib/format";
+import { getImageUrl, getProductCardImages } from "@/lib/images";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 export function AdminProducts() {
@@ -44,11 +45,26 @@ export function AdminProducts() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {isLoading && !products
           ? Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-72" />)
-          : products?.map((p) => (
-              <article key={p.id} className="border border-stone-200">
-                <Link to={`/admin/products/${p.id}/edit`} className="block">
-                  <img src={p.images[0]?.image} alt={p.name} className="aspect-[4/5] w-full object-cover" />
-                </Link>
+          : products?.map((p) => {
+              const primary = getProductCardImages(p.images, null).primary;
+              const thumbUrl = getImageUrl(primary, "card");
+              return (
+                <article key={p.id} className="border border-stone-200">
+                  <Link to={`/admin/products/${p.id}/edit`} className="block bg-stone-100 aspect-[4/5] overflow-hidden">
+                    {thumbUrl ? (
+                      <img
+                        src={thumbUrl}
+                        alt={primary?.alt || p.name}
+                        loading="lazy"
+                        decoding="async"
+                        className="size-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex size-full items-center justify-center p-4 text-center font-mono text-[10px] uppercase tracking-widest text-stone-400">
+                        {p.name}
+                      </div>
+                    )}
+                  </Link>
                 <div className="p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -79,7 +95,8 @@ export function AdminProducts() {
                   </div>
                 </div>
               </article>
-            ))}
+              );
+            })}
       </div>
 
       {!isLoading && products && products.length === 0 && (

@@ -19,6 +19,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { reviewSchema, type ReviewInput } from "@/lib/validation";
 import { getApiErrorMessage } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
+import { getProductDetailImages } from "@/lib/images";
 import { cn } from "@/lib/utils";
 
 export function ProductDetailPage() {
@@ -80,7 +81,7 @@ export function ProductDetailPage() {
   );
 
   const selectedImages = useMemo(
-    () => (product && colorId ? product.images.filter((i) => i.color === colorId) : product?.images ?? []),
+    () => (product ? getProductDetailImages(product.images, colorId) : []),
     [product, colorId]
   );
 

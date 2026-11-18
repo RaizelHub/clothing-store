@@ -1188,6 +1188,156 @@ const routes: MockRoute[] = [
     },
   },
 
+  // --- admin: media & product images ---
+  {
+    method: "get",
+    pattern: /^\/admin\/media\/config\/?$/,
+    handler: ({ me }) => {
+      if (!me?.is_staff) fail(403, { detail: "Staff only." });
+      return ok(200, {
+        provider: "mock",
+        configured: true,
+        max_file_size_mb: 8,
+        allowed_formats: ["avif", "jpeg", "png", "webp"],
+        error: null,
+      });
+    },
+  },
+  {
+    method: "get",
+    pattern: /^\/admin\/products\/(\d+)\/images\/?$/,
+    handler: ({ db, me }, m) => {
+      if (!me?.is_staff) fail(403, { detail: "Staff only." });
+      const p = db.products.find((prod) => prod.id === Number(m[1]));
+      if (!p) fail(404, { detail: "Product not found." });
+      return ok(200, [...p.images].sort((a, b) => a.position - b.position));
+    },
+  },
+  {
+    method: "post",
+    pattern: /^\/admin\/products\/(\d+)\/images\/?$/,
+    handler: ({ db, me, body }, m) => {
+      if (!me?.is_staff) fail(403, { detail: "Staff only." });
+      const p = db.products.find((prod) => prod.id === Number(m[1]));
+      if (!p) fail(404, { detail: "Product not found." });
+      const files = (body._files as File[] | undefined) ?? [];
+      if (!files.length) {
+        fail(400, { file: ["An image file is required."] });
+      }
+      const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/avif"];
+      for (const f of files) {
+        if (!allowedTypes.includes(f.type)) {
+          fail(400, { file: ["Unsupported image format. Only JPEG, PNG, WEBP, and AVIF are allowed."] });
+        }
+        if (f.size > 8 * 1024 * 1024) {
+          fail(400, { file: ["File exceeds the maximum allowed size of 8 MB."] });
+        }
+      }
+      const colorId = body.color_id ? Number(body.color_id) : null;
+      const altInput = String(body.alt ?? "").trim();
+      const makePrimary = String(body.is_primary ?? "").toLowerCase() === "true";
+      const created = files.map((file, idx) => {
+        const position = p.images.length;
+        const previewUrl =
+          typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
+            ? URL.createObjectURL(file)
+            : placeholderImage(`${p.slug}-${position}`, "#292524", position);
+        const img = {
+          id: nextId(db.seq, "image"),
+          image: previewUrl,
+          alt: altInput || `${p.name} — view ${position + 1}`,
+          color: colorId,
+          position,
+          is_primary: makePrimary && idx === 0 ? true : p.images.length === 0 && idx === 0,
+          public_id: `mock/products/product-${p.id}/${Date.now()}-${idx}`,
+          storage_provider: "local" as const,
+        };
+        if (img.is_primary) {
+          p.images.forEach((ex) => {
+            ex.is_primary = false;
+          });
+        }
+        p.images.push(img);
+        return img;
+      });
+      saveDB();
+      return ok(201, created);
+    },
+  },
+  {
+    method: "post",
+    pattern: /^\/admin\/products\/(\d+)\/images\/reorder\/?$/,
+    handler: ({ db, me, body }, m) => {
+      if (!me?.is_staff) fail(403, { detail: "Staff only." });
+      const p = db.products.find((prod) => prod.id === Number(m[1]));
+      if (!p) fail(404, { detail: "Product not found." });
+      const ids = Array.isArray(body.image_ids) ? (body.image_ids as number[]).map(Number) : [];
+      if (!ids.length) fail(400, { image_ids: ["A non-empty list of image IDs is required."] });
+      const byId = new Map(p.images.map((i) => [i.id, i]));
+      const reordered = ids.map((id) => byId.get(id)).filter((i): i is NonNullable<typeof i> => Boolean(i));
+      const seen = new Set(reordered.map((i) => i.id));
+      p.images.forEach((i) => {
+        if (!seen.has(i.id)) reordered.push(i);
+      });
+      reordered.forEach((i, idx) => {
+        i.position = idx;
+      });
+      p.images = reordered;
+      saveDB();
+      return ok(200, p.images);
+    },
+  },
+  {
+    method: "patch",
+    pattern: /^\/admin\/products\/(\d+)\/images\/(\d+)\/?$/,
+    handler: ({ db, me, body }, m) => {
+      if (!me?.is_staff) fail(403, { detail: "Staff only." });
+      const p = db.products.find((prod) => prod.id === Number(m[1]));
+      if (!p) fail(404, { detail: "Product not found." });
+      const img = p.images.find((i) => i.id === Number(m[2]));
+      if (!img) fail(404, { detail: "Image not found for this product." });
+      const files = (body._files as File[] | undefined) ?? [];
+      if (files.length > 0) {
+        const f = files[0];
+        img.image =
+          typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
+            ? URL.createObjectURL(f)
+            : placeholderImage(`${p.slug}-replaced`, "#44403c", img.position);
+      }
+      if ("alt" in body) img.alt = String(body.alt ?? "");
+      if ("color_id" in body) {
+        img.color = body.color_id === null || body.color_id === "" ? null : Number(body.color_id);
+      }
+      if (body.is_primary === true || String(body.is_primary).toLowerCase() === "true") {
+        p.images.forEach((other) => {
+          other.is_primary = other.id === img.id;
+        });
+      }
+      saveDB();
+      return ok(200, img);
+    },
+  },
+  {
+    method: "delete",
+    pattern: /^\/admin\/products\/(\d+)\/images\/(\d+)\/?$/,
+    handler: ({ db, me }, m) => {
+      if (!me?.is_staff) fail(403, { detail: "Staff only." });
+      const p = db.products.find((prod) => prod.id === Number(m[1]));
+      if (!p) fail(404, { detail: "Product not found." });
+      const idx = p.images.findIndex((i) => i.id === Number(m[2]));
+      if (idx === -1) fail(404, { detail: "Image not found for this product." });
+      const [removed] = p.images.splice(idx, 1);
+      p.images.forEach((i, pos) => {
+        i.position = pos;
+      });
+      if (removed.is_primary && p.images.length > 0) {
+        p.images[0].is_primary = true;
+      }
+      saveDB();
+      return ok(200, { deleted_id: Number(m[2]), images: p.images });
+    },
+  },
+
   // --- admin: products & inventory ---
   {
     method: "get",
@@ -1585,7 +1735,17 @@ function handle(config: InternalAxiosRequestConfig): AxiosResponse {
   const me = authHeader.startsWith("Bearer ") ? decodeAccess(authHeader.slice(7)) : null;
 
   let body: Record<string, unknown> = {};
-  if (config.data && typeof config.data === "string") {
+  if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+    const files: File[] = [];
+    config.data.forEach((val, key) => {
+      if (typeof File !== "undefined" && val instanceof File) {
+        files.push(val);
+      } else {
+        body[key] = val;
+      }
+    });
+    body._files = files;
+  } else if (config.data && typeof config.data === "string") {
     try {
       body = JSON.parse(config.data);
     } catch {

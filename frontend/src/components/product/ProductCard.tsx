@@ -6,6 +6,7 @@ import type { ProductSummary } from "@/types/api";
 import { getProduct } from "@/api/products";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
+import { getImageSrcSet, getImageUrl, getProductCardImages } from "@/lib/images";
 import { useWishlist, useWishlistActions } from "@/hooks/useWishlist";
 import { useAddToCart } from "@/hooks/useCart";
 import { useUIStore } from "@/store/useUIStore";
@@ -56,12 +57,15 @@ export function ProductCard({ product }: { product: ProductSummary }) {
     staleTime: 5 * 60 * 1000,
   });
 
-  const matchedImages = activeColorId
-    ? product.images.filter((img) => img.color === activeColorId)
-    : product.images;
+  const { primary: image, hover: hoverImage } = getProductCardImages(
+    product.images,
+    activeColorId,
+  );
+  const [imgFailed, setImgFailed] = useState(false);
 
-  const image = matchedImages[0] ?? product.images[0];
-  const hoverImage = matchedImages[1] ?? product.images[1] ?? image;
+  useEffect(() => {
+    setImgFailed(false);
+  }, [image?.id, activeColorId]);
 
   const handleQuickAddVariant = (sizeId: number) => {
     if (!fullProduct) return;
@@ -100,11 +104,15 @@ export function ProductCard({ product }: { product: ProductSummary }) {
           to={`/products/${product.slug}`}
           className="block size-full relative"
         >
-          {image && (
+          {image && !imgFailed ? (
             <img
-              src={image.image}
+              src={getImageUrl(image, "card")}
+              srcSet={getImageSrcSet(image)}
+              sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
               alt={image.alt || product.name}
               loading="lazy"
+              decoding="async"
+              onError={() => setImgFailed(true)}
               className={cn(
                 "absolute inset-0 size-full object-cover transition-all duration-700 ease-editorial",
                 hoverImage && hoverImage !== image
@@ -112,12 +120,21 @@ export function ProductCard({ product }: { product: ProductSummary }) {
                   : "group-hover:scale-[1.02]",
               )}
             />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center bg-stone-100 p-4 text-center">
+              <span className="font-mono text-[10px] uppercase tracking-widest text-stone-400">
+                {product.name}
+              </span>
+            </div>
           )}
-          {hoverImage && hoverImage !== image && (
+          {hoverImage && hoverImage !== image && !imgFailed && (
             <img
-              src={hoverImage.image}
+              src={getImageUrl(hoverImage, "card")}
+              srcSet={getImageSrcSet(hoverImage)}
+              sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
               alt={hoverImage.alt || product.name}
               loading="lazy"
+              decoding="async"
               className="absolute inset-0 size-full object-cover opacity-0 transition-all duration-700 ease-editorial group-hover:opacity-100 group-hover:scale-[1.02]"
             />
           )}
