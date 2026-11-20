@@ -29,23 +29,23 @@ export function Footer() {
   };
 
   return (
-    <footer className="studio-footer mt-20 sm:mt-24 border-t border-stone-200/80">
+    <footer className="studio-footer mt-20 sm:mt-24 border-t border-stone-200/80 bg-stone-50/40">
       <div className="container-editorial py-16 sm:py-20">
-        <div className="grid grid-cols-1 gap-12 sm:grid-cols-2 md:grid-cols-5 lg:gap-16">
+        <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 md:grid-cols-6 lg:gap-12">
           {/* Brand Philosophy */}
-          <div className="md:col-span-2 space-y-4">
+          <div className="sm:col-span-2 md:col-span-2 space-y-4">
             <div className="flex flex-col">
               <span className="footer-wordmark">studio</span>
               <span className="text-[9px] uppercase tracking-[0.35em] text-stone-400 -mt-1 font-sans">
-                Atelier
+                Atelier &bull; Manila
               </span>
             </div>
             <p className="text-xs leading-relaxed text-stone-600 max-w-sm">
-              Good clothes for whatever your day looks like. Find a favorite,
-              make it yours, wear it on repeat.
+              Thoughtful wardrobe essentials for whatever your day holds. Designed in Manila, crafted with integrity, made to be worn on repeat.
             </p>
-            <div className="pt-2 text-[10px] uppercase tracking-widest text-stone-400">
-              A wardrobe for living in.
+            <div className="text-[11px] text-stone-400 leading-relaxed">
+              118 Legaspi St., Legaspi Village, Makati City<br />
+              Mon&ndash;Sat 9:00 AM &ndash; 7:00 PM PHT
             </div>
           </div>
 
@@ -54,7 +54,7 @@ export function Footer() {
             <h3 className="mb-4 text-[11px] font-medium uppercase tracking-widest text-ink">
               Collections
             </h3>
-            <ul className="space-y-3 text-xs text-stone-600">
+            <ul className="space-y-2.5 text-xs text-stone-600">
               <li>
                 <Link to="/new" className="transition-colors hover:text-ink">
                   New Arrivals
@@ -75,32 +75,48 @@ export function Footer() {
                   to="/collections"
                   className="transition-colors hover:text-ink"
                 >
-                  Collections
+                  Seasonal Edits
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Column 2: Here to helps */}
+          {/* Column 2: Client Care */}
           <div>
             <h3 className="mb-4 text-[11px] font-medium uppercase tracking-widest text-ink">
-              Here to help
+              Client Care
             </h3>
-            <ul className="space-y-3 text-xs text-stone-600">
+            <ul className="space-y-2.5 text-xs text-stone-600">
+              <li>
+                <Link
+                  to="/contact"
+                  className="transition-colors hover:text-ink"
+                >
+                  Atelier Concierge
+                </Link>
+              </li>
               <li>
                 <Link
                   to="/account/orders"
                   className="transition-colors hover:text-ink"
                 >
-                  Order Status & Tracking
+                  Order Tracking
                 </Link>
               </li>
               <li>
                 <Link
-                  to="/account/addresses"
+                  to="/shipping-policy"
                   className="transition-colors hover:text-ink"
                 >
-                  Shipping & Delivery
+                  Shipping &amp; Delivery
+                </Link>
+              </li>
+              <li>
+                <Link
+                  to="/returns"
+                  className="transition-colors hover:text-ink"
+                >
+                  Returns &amp; Exchanges
                 </Link>
               </li>
               <li>
@@ -108,7 +124,48 @@ export function Footer() {
                   to="/account"
                   className="transition-colors hover:text-ink"
                 >
-                  Customer Profile
+                  Customer Account
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* Column 3: Legal & Compliance */}
+          <div>
+            <h3 className="mb-4 text-[11px] font-medium uppercase tracking-widest text-ink">
+              Legal
+            </h3>
+            <ul className="space-y-2.5 text-xs text-stone-600">
+              <li>
+                <Link
+                  to="/terms"
+                  className="transition-colors hover:text-ink"
+                >
+                  Terms of Service
+                </Link>
+              </li>
+              <li>
+                <Link
+                  to="/privacy"
+                  className="transition-colors hover:text-ink"
+                >
+                  Privacy Policy
+                </Link>
+              </li>
+              <li>
+                <Link
+                  to="/returns"
+                  className="transition-colors hover:text-ink"
+                >
+                  Refund Policy
+                </Link>
+              </li>
+              <li>
+                <Link
+                  to="/shipping-policy"
+                  className="transition-colors hover:text-ink"
+                >
+                  Delivery Policy
                 </Link>
               </li>
               <li>
@@ -116,23 +173,23 @@ export function Footer() {
                   to="/admin"
                   className="transition-colors hover:text-ink text-stone-400"
                 >
-                  Atelier Administration
+                  Atelier Admin
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Column 3: Keep in the loop Newsletter */}
-          <div>
+          {/* Column 4: Newsletter */}
+          <div className="sm:col-span-2 md:col-span-1">
             <h3 className="mb-4 text-[11px] font-medium uppercase tracking-widest text-ink">
-              Keep in the loop
+              Stay in Touch
             </h3>
             <p className="mb-3 text-xs text-stone-500 leading-relaxed">
-              New pieces, fresh ideas, and a little inspiration for your inbox.
+              New arrivals, private atelier events, and styling inspiration for your inbox.
             </p>
             {result?.ok ? (
               <div className="flex items-center gap-2 rounded bg-stone-100 p-2.5 text-xs text-stone-900 border border-stone-200 animate-fade-in">
-                <Check size={14} className="text-success" />
+                <Check size={14} className="text-success shrink-0" />
                 <span>{result.message}</span>
               </div>
             ) : (
@@ -170,15 +227,18 @@ export function Footer() {
         </div>
 
         {/* Bottom copyright & payment marks */}
-        <div className="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-stone-200/80 pt-8 text-[11px] text-stone-400">
+        <div className="mt-16 flex flex-wrap items-center justify-between gap-6 border-t border-stone-200/80 pt-8 text-[11px] text-stone-400">
           <span>
-            © {new Date().getFullYear()} Studio Atelier. All rights reserved.
+            &copy; {new Date().getFullYear()} Studio Atelier Manila. All rights reserved.
           </span>
-          <div className="flex items-center gap-6 text-[10px] uppercase tracking-widest text-stone-400">
+          <div className="flex flex-wrap items-center gap-4 sm:gap-5 text-[10px] uppercase tracking-wider text-stone-500">
             <span>Visa</span>
             <span>Mastercard</span>
-            <span>Amex</span>
-            <span>Apple Pay</span>
+            <span>GCash</span>
+            <span>Maya</span>
+            <span>GrabPay</span>
+            <span>BPI</span>
+            <span>UnionBank</span>
           </div>
         </div>
       </div>

@@ -13,6 +13,13 @@ import { WishlistPage } from "@/pages/Wishlist";
 const CheckoutPage = lazy(() => import("@/pages/Checkout").then((m) => ({ default: m.CheckoutPage })));
 const CheckoutSuccessPage = lazy(() => import("@/pages/CheckoutSuccess").then((m) => ({ default: m.CheckoutSuccessPage })));
 
+const TermsPage = lazy(() => import("@/pages/legal/TermsPage").then((m) => ({ default: m.TermsPage })));
+const PrivacyPage = lazy(() => import("@/pages/legal/PrivacyPage").then((m) => ({ default: m.PrivacyPage })));
+const ReturnsPage = lazy(() => import("@/pages/legal/ReturnsPage").then((m) => ({ default: m.ReturnsPage })));
+const ShippingPage = lazy(() => import("@/pages/legal/ShippingPage").then((m) => ({ default: m.ShippingPage })));
+const ContactPage = lazy(() => import("@/pages/legal/ContactPage").then((m) => ({ default: m.ContactPage })));
+
+
 const LoginPage = lazy(() => import("@/pages/auth/Login").then((m) => ({ default: m.LoginPage })));
 const RegisterPage = lazy(() => import("@/pages/auth/Register").then((m) => ({ default: m.RegisterPage })));
 const ForgotPasswordPage = lazy(() => import("@/pages/auth/ForgotPassword").then((m) => ({ default: m.ForgotPasswordPage })));
@@ -57,6 +64,12 @@ export const router = createBrowserRouter([
       { path: "/wishlist", element: <WishlistPage /> },
       { path: "/checkout", element: <CheckoutPage /> },
       { path: "/checkout/success/:orderNumber", element: <CheckoutSuccessPage /> },
+      { path: "/terms", element: <TermsPage /> },
+      { path: "/privacy", element: <PrivacyPage /> },
+      { path: "/returns", element: <ReturnsPage /> },
+      { path: "/shipping-policy", element: <ShippingPage /> },
+      { path: "/contact", element: <ContactPage /> },
+
 
       {
         path: "/login",

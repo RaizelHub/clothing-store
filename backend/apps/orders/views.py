@@ -1,4 +1,5 @@
 import re
+import logging
 from datetime import timedelta
 from decimal import Decimal
 
@@ -18,7 +19,14 @@ from rest_framework.response import Response
 from apps.accounts.serializers import AddressSerializer, UserSerializer
 from apps.catalog.models import Product, ProductVariant, StoreSettings
 from apps.common.money import cents_to_str, from_cents, to_cents
+from apps.core.emails import (
+    get_email_provider,
+    build_order_confirmation_email,
+    build_payment_receipt_email,
+    build_order_shipped_email,
+)
 from apps.orders.models import (
+
     Cart,
     CartItem,
     Coupon,
@@ -51,6 +59,16 @@ from .serializers import (
 )
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+logger = logging.getLogger("studio.orders")
+
+
+def _dispatch_email_safely(email_message):
+    """Deliver an email message safely without failing parent workflows on network or provider error."""
+    try:
+        get_email_provider().send(email_message)
+    except Exception as exc:
+        logger.warning(f"Failed to deliver email '{getattr(email_message, 'subject', '')}': {exc}")
+
 
 
 def _guest_key_from_request(request) -> str:
@@ -420,6 +438,11 @@ def place_order(request):
         order.payment_reference = f"mock_ref_{order.order_number}"
         order.save(update_fields=["payment_reference"])
 
+    # Transactional emails: order confirmation and receipt
+    _dispatch_email_safely(build_order_confirmation_email(order))
+    if order.status == Order.STATUS_PAID:
+        _dispatch_email_safely(build_payment_receipt_email(order))
+
     return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
 
@@ -599,6 +622,12 @@ def admin_order_detail(request, order_number):
 
             order.status = new_status
             order.timeline = [*order.timeline, {"status": new_status, "at": timezone.now().isoformat(), "note": note}]
+
+            # Notify customer if transitioned to shipped
+            if new_status == Order.STATUS_SHIPPED:
+                carrier_val = data.get("carrier") or order.carrier or "LBC Express"
+                track_val = data.get("tracking_number") or order.tracking_number
+                _dispatch_email_safely(build_order_shipped_email(order, tracking_number=track_val, carrier=carrier_val))
         if "tracking_number" in data:
             order.tracking_number = data["tracking_number"] or None
             if data.get("carrier"):
@@ -840,6 +869,8 @@ def paymongo_webhook(request):
                     },
                 ]
                 locked_order.save(update_fields=["status", "payment_status", "payment_transaction_id", "payment_method", "timeline", "is_stock_deducted"])
+                _dispatch_email_safely(build_payment_receipt_email(locked_order, transaction_id=tx_id, method_label=locked_order.payment_method))
+
 
         # Handle failed or expired payment
         elif event_type in ("checkout_session.expired", "payment.failed"):

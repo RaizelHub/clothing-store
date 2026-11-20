@@ -6,9 +6,14 @@ The current app includes:
 
 - Product catalog, search, filters, collections, product variants, and reviews
 - Cart, wishlist, coupons, shipping quotes, checkout, and order history
+- PayMongo payment gateway integration with secure webhook verification and live PH payment methods (GCash, Maya, GrabPay, Cards, BPI, UnionBank)
+- Cloudinary cloud media storage for product image galleries with responsive presets and local storage fallback
+- Transactional email architecture (Mock, Resend, SMTP) for order confirmations, payment receipts, and dispatch notifications
+- Complete compliance & legal storefront pages (Terms of Service, Privacy Policy under RA 10173, Shipping Policy, Returns & Refund Policy, Customer Care Concierge)
 - Registration, JWT login, profile management, addresses, and password reset demo flows
 - Admin dashboard, products, inventory, orders, customers, collections, discounts, reviews, and store settings
 - A browser-local mock API for frontend-only demos
+
 
 ## Quick start on Windows
 
@@ -99,9 +104,10 @@ The Vite development server proxies `/api` requests to Django on port 8000.
 Run the automated test suite and deployment audits:
 
 ```powershell
-# Backend automated tests (13 tests covering guest isolation, concurrency, auth):
+# Backend automated tests (41 tests covering guest isolation, concurrency, auth, PayMongo, Cloudinary media, and emails):
 cd backend
 .\.venv\Scripts\python.exe manage.py test
+
 
 # Django production settings & security check:
 .\.venv\Scripts\python.exe manage.py check --deploy --settings=config.settings.production

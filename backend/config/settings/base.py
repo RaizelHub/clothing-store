@@ -159,4 +159,10 @@ CLOUDINARY_SECURE = env.bool("CLOUDINARY_SECURE", default=True)
 CLOUDINARY_UPLOAD_FOLDER = env("CLOUDINARY_UPLOAD_FOLDER", default="studio/products")
 MEDIA_MAX_UPLOAD_SIZE_MB = env.int("MEDIA_MAX_UPLOAD_SIZE_MB", default=8)
 
+# --- Transactional Emails (Mock / Resend / SMTP) --------------------------
+EMAIL_PROVIDER = env("EMAIL_PROVIDER", default="mock")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Studio Atelier <concierge@studio-atelier.ph>")
+RESEND_API_KEY = env("RESEND_API_KEY", default="")
+
+
 

@@ -1104,6 +1104,20 @@ const routes: MockRoute[] = [
     },
   },
 
+  // --- concierge contact inquiry ---
+  {
+    method: "post",
+    pattern: /^\/contact\/?$/,
+    handler: ({ body }) => {
+      const email = String(body.email ?? "").toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return ok(400, { ok: false, message: "Enter a valid email address." });
+      return ok(200, {
+        ok: true,
+        message: "Thank you for contacting Studio Atelier. Our concierge team has received your message and will respond within 24 hours.",
+      });
+    },
+  },
+
   // --- admin: stats, orders, customers ---
   {
     method: "get",
