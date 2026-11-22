@@ -1,5 +1,7 @@
+from decimal import Decimal
 from django.conf import settings
 from django.db import models
+
 
 
 class Color(models.Model):
@@ -169,3 +171,110 @@ class StoreSettings(models.Model):
     def get_solo(cls) -> "StoreSettings":
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
+
+
+class Outfit(models.Model):
+    STATUS_DRAFT = "draft"
+    STATUS_PUBLISHED = "published"
+    STATUS_ARCHIVED = "archived"
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_PUBLISHED, "Published"),
+        (STATUS_ARCHIVED, "Archived"),
+    ]
+
+    DISCOUNT_NONE = "none"
+    DISCOUNT_PERCENT = "percent"
+    DISCOUNT_FIXED = "fixed"
+    DISCOUNT_CHOICES = [
+        (DISCOUNT_NONE, "No Discount"),
+        (DISCOUNT_PERCENT, "Percentage Off"),
+        (DISCOUNT_FIXED, "Fixed Amount Off"),
+    ]
+
+    name = models.CharField(max_length=160)
+    slug = models.SlugField(max_length=180, unique=True)
+    description = models.TextField(blank=True)
+    cover_image = models.CharField(max_length=1000, blank=True)
+    cover_image_alt = models.CharField(max_length=220, blank=True)
+    hero_image = models.CharField(max_length=1000, blank=True)
+    gallery_images = models.JSONField(default=list, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True)
+    is_featured = models.BooleanField(default=False, db_index=True)
+    sort_order = models.PositiveIntegerField(default=0, db_index=True)
+
+    # Optional bundle discount
+    bundle_discount_type = models.CharField(max_length=10, choices=DISCOUNT_CHOICES, default=DISCOUNT_NONE)
+    bundle_discount_value = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    bundle_min_items = models.PositiveIntegerField(
+        default=0,
+        help_text="Minimum selected items required for bundle discount (0 = all items required)",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "-created_at", "id"]
+
+    def __str__(self):
+        return self.name
+
+    def calculate_bundle_pricing(self, selected_items_count: int, subtotal: Decimal) -> dict:
+        """
+        Calculates bundle discount and final total given selected item count and subtotal.
+        Returns dict with original_total, discount_amount, final_total, is_eligible, savings_label.
+        """
+        total_items_in_look = self.items.count()
+        req_count = self.bundle_min_items if self.bundle_min_items > 0 else total_items_in_look
+
+        is_eligible = (
+            self.bundle_discount_type != self.DISCOUNT_NONE
+            and self.bundle_discount_value > Decimal("0.00")
+            and selected_items_count >= req_count
+            and selected_items_count > 0
+        )
+
+        discount_amount = Decimal("0.00")
+        savings_label = ""
+
+        if is_eligible:
+            if self.bundle_discount_type == self.DISCOUNT_PERCENT:
+                discount_amount = round(subtotal * (self.bundle_discount_value / Decimal("100.00")), 2)
+                savings_label = f"Bundle Savings: {int(self.bundle_discount_value) if self.bundle_discount_value == int(self.bundle_discount_value) else self.bundle_discount_value}% Off"
+            elif self.bundle_discount_type == self.DISCOUNT_FIXED:
+                discount_amount = min(self.bundle_discount_value, subtotal)
+                savings_label = f"Bundle Savings: ₱{self.bundle_discount_value:,.2f} Off"
+
+        # Prevent negative totals
+        discount_amount = min(discount_amount, subtotal)
+        final_total = max(Decimal("0.00"), subtotal - discount_amount)
+
+        return {
+            "is_eligible": is_eligible,
+            "bundle_discount_type": self.bundle_discount_type,
+            "bundle_discount_value": self.bundle_discount_value,
+            "discount_amount": discount_amount,
+            "subtotal": subtotal,
+            "final_total": final_total,
+            "savings_label": savings_label,
+            "required_items_count": req_count,
+        }
+
+
+class OutfitItem(models.Model):
+    outfit = models.ForeignKey(Outfit, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="outfit_items")
+    position = models.PositiveIntegerField(default=0)
+    styling_note = models.CharField(max_length=300, blank=True)
+    is_featured_item = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["position", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["outfit", "product"], name="uniq_outfit_product"),
+        ]
+
+    def __str__(self):
+        return f"{self.outfit.name} — {self.product.name} (pos {self.position})"

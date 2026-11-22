@@ -1,5 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { addCartItem, getCart, getShippingQuote, mergeGuestCart, removeCartItem, updateCartItem } from "@/api/cart";
+import { addLookToCart } from "@/api/looks";
+import type { AddOutfitToCartItem } from "@/types/api";
+
 
 export function useCart() {
   return useQuery({
@@ -54,6 +57,17 @@ export function useMergeCart() {
     mutationFn: mergeGuestCart,
     onSuccess: (cart) => {
       queryClient.setQueryData(["cart"], cart);
+    },
+  });
+}
+
+export function useAddLookToCart() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ slug, items }: { slug: string; items: AddOutfitToCartItem[] }) =>
+      addLookToCart(slug, items),
+    onSuccess: (result) => {
+      queryClient.setQueryData(["cart"], result.cart);
     },
   });
 }

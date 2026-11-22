@@ -1,4 +1,6 @@
 from datetime import timedelta
+from decimal import Decimal
+
 
 from django.db import models
 from django.db.models import Q, Sum
@@ -7,7 +9,8 @@ from rest_framework import serializers
 
 from apps.common.money import from_cents, to_str
 
-from .models import Category, Color, Collection, Product, ProductImage, ProductVariant, Review, Size, StoreSettings
+from .models import Category, Color, Collection, Outfit, OutfitItem, Product, ProductImage, ProductVariant, Review, Size, StoreSettings
+
 
 
 class ColorSerializer(serializers.ModelSerializer):
@@ -295,3 +298,166 @@ class InventoryRowSerializer(serializers.Serializer):
     stock = serializers.IntegerField()
     low = serializers.BooleanField()
     threshold = serializers.IntegerField()
+
+
+# --- Shop the Look / Outfit Serializers -------------------------------------
+
+
+class OutfitItemSerializer(serializers.ModelSerializer):
+    product = ProductDetailSerializer(read_only=True)
+    product_id = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all(), source="product", write_only=True)
+
+    class Meta:
+        model = OutfitItem
+        fields = ["id", "product", "product_id", "position", "styling_note", "is_featured_item"]
+
+
+class OutfitSummarySerializer(serializers.ModelSerializer):
+    items_count = serializers.SerializerMethodField()
+    items = serializers.SerializerMethodField()
+    total_price = serializers.SerializerMethodField()
+    bundle_pricing = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Outfit
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "description",
+            "cover_image",
+            "cover_image_alt",
+            "hero_image",
+            "status",
+            "is_featured",
+            "sort_order",
+            "bundle_discount_type",
+            "bundle_discount_value",
+            "bundle_min_items",
+            "items_count",
+            "items",
+            "total_price",
+            "bundle_pricing",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_items_count(self, obj):
+        return obj.items.count()
+
+    def get_items(self, obj):
+        items = obj.items.select_related("product").all()
+        return [
+            {
+                "id": it.id,
+                "product_id": it.product_id,
+                "product_name": it.product.name,
+                "product_slug": it.product.slug,
+                "price": to_str(it.product.sale_price or it.product.base_price),
+                "is_featured_item": it.is_featured_item,
+                "styling_note": it.styling_note,
+            }
+            for it in items
+        ]
+
+    def get_total_price(self, obj):
+        items = obj.items.select_related("product").all()
+        subtotal = sum((it.product.sale_price or it.product.base_price for it in items), Decimal("0.00"))
+        return to_str(subtotal)
+
+    def get_bundle_pricing(self, obj):
+        items = obj.items.select_related("product").all()
+        subtotal = sum((it.product.sale_price or it.product.base_price for it in items), Decimal("0.00"))
+        calc = obj.calculate_bundle_pricing(len(items), subtotal)
+        return {
+            "is_eligible": calc["is_eligible"],
+            "bundle_discount_type": calc["bundle_discount_type"],
+            "bundle_discount_value": to_str(calc["bundle_discount_value"]),
+            "discount_amount": to_str(calc["discount_amount"]),
+            "subtotal": to_str(calc["subtotal"]),
+            "final_total": to_str(calc["final_total"]),
+            "savings_label": calc["savings_label"],
+            "required_items_count": calc["required_items_count"],
+        }
+
+
+class OutfitDetailSerializer(serializers.ModelSerializer):
+    items = OutfitItemSerializer(many=True, read_only=True)
+    items_count = serializers.SerializerMethodField()
+    bundle_pricing = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Outfit
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "description",
+            "cover_image",
+            "cover_image_alt",
+            "hero_image",
+            "gallery_images",
+            "status",
+            "is_featured",
+            "sort_order",
+            "bundle_discount_type",
+            "bundle_discount_value",
+            "bundle_min_items",
+            "items_count",
+            "items",
+            "bundle_pricing",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_items_count(self, obj):
+        return obj.items.count()
+
+    def get_bundle_pricing(self, obj):
+        items = obj.items.select_related("product").all()
+        subtotal = sum((it.product.sale_price or it.product.base_price for it in items), Decimal("0.00"))
+        calc = obj.calculate_bundle_pricing(len(items), subtotal)
+        return {
+            "is_eligible": calc["is_eligible"],
+            "bundle_discount_type": calc["bundle_discount_type"],
+            "bundle_discount_value": to_str(calc["bundle_discount_value"]),
+            "discount_amount": to_str(calc["discount_amount"]),
+            "subtotal": to_str(calc["subtotal"]),
+            "final_total": to_str(calc["final_total"]),
+            "savings_label": calc["savings_label"],
+            "required_items_count": calc["required_items_count"],
+        }
+
+
+class AdminOutfitItemInputSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField()
+    position = serializers.IntegerField(default=0)
+    styling_note = serializers.CharField(max_length=300, required=False, allow_blank=True)
+    is_featured_item = serializers.BooleanField(default=False)
+
+
+class AdminOutfitInputSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=160)
+    slug = serializers.CharField(max_length=180, required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True)
+    cover_image = serializers.CharField(max_length=1000, required=False, allow_blank=True)
+    cover_image_alt = serializers.CharField(max_length=220, required=False, allow_blank=True)
+    hero_image = serializers.CharField(max_length=1000, required=False, allow_blank=True)
+    gallery_images = serializers.ListField(child=serializers.DictField(), required=False)
+    status = serializers.ChoiceField(choices=Outfit.STATUS_CHOICES, default=Outfit.STATUS_DRAFT)
+    is_featured = serializers.BooleanField(default=False)
+    sort_order = serializers.IntegerField(default=0)
+    bundle_discount_type = serializers.ChoiceField(choices=Outfit.DISCOUNT_CHOICES, default=Outfit.DISCOUNT_NONE)
+    bundle_discount_value = serializers.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    bundle_min_items = serializers.IntegerField(default=0)
+    items = AdminOutfitItemInputSerializer(many=True, required=False)
+
+
+class AddOutfitToCartItemSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField()
+    variant_id = serializers.IntegerField()
+    quantity = serializers.IntegerField(default=1, min_value=1)
+
+
+class AddOutfitToCartInputSerializer(serializers.Serializer):
+    items = AddOutfitToCartItemSerializer(many=True)

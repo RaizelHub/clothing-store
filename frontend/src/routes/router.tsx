@@ -45,6 +45,10 @@ const AdminCollections = lazy(() => import("@/pages/admin/AdminCollections").the
 const AdminDiscounts = lazy(() => import("@/pages/admin/AdminDiscounts").then((m) => ({ default: m.AdminDiscounts })));
 const AdminReviews = lazy(() => import("@/pages/admin/AdminReviews").then((m) => ({ default: m.AdminReviews })));
 const AdminSettings = lazy(() => import("@/pages/admin/AdminSettings").then((m) => ({ default: m.AdminSettings })));
+const LooksPage = lazy(() => import("@/pages/looks/LooksPage").then((m) => ({ default: m.LooksPage })));
+const LookDetailPage = lazy(() => import("@/pages/looks/LookDetailPage").then((m) => ({ default: m.LookDetailPage })));
+const AdminLooks = lazy(() => import("@/pages/admin/AdminLooks").then((m) => ({ default: m.AdminLooks })));
+const OutfitEditor = lazy(() => import("@/pages/admin/OutfitEditor").then((m) => ({ default: m.OutfitEditor })));
 
 import { RequireAuth, RequireGuest, RequireAdmin } from "@/routes/guards";
 
@@ -59,6 +63,8 @@ export const router = createBrowserRouter([
       { path: "/category/:slug?", element: <CategoryPage /> },
       { path: "/collections", element: <Collections /> },
       { path: "/collections/:slug", element: <CollectionPage /> },
+      { path: "/looks", element: <LooksPage /> },
+      { path: "/looks/:slug", element: <LookDetailPage /> },
       { path: "/search", element: <SearchPage /> },
       { path: "/products/:slug", element: <ProductDetailPage /> },
       { path: "/wishlist", element: <WishlistPage /> },
@@ -138,6 +144,9 @@ export const router = createBrowserRouter([
           { path: "products/:id/edit", element: <ProductEditor /> },
           { path: "inventory", element: <InventoryPage /> },
           { path: "collections", element: <AdminCollections /> },
+          { path: "looks", element: <AdminLooks /> },
+          { path: "looks/new", element: <OutfitEditor /> },
+          { path: "looks/:id/edit", element: <OutfitEditor /> },
           { path: "discounts", element: <AdminDiscounts /> },
           { path: "reviews", element: <AdminReviews /> },
           { path: "settings", element: <AdminSettings /> },

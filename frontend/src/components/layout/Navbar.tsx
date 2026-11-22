@@ -19,6 +19,7 @@ const LINKS = [
   { label: "Women", href: "/women" },
   { label: "Men", href: "/men" },
   { label: "Collections", href: "/collections" },
+  { label: "Shop the Look", href: "/looks" },
 ];
 
 export function Navbar() {

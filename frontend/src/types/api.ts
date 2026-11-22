@@ -374,3 +374,125 @@ export interface AuthTokens {
   access: string;
   refresh: string;
 }
+
+// --- Shop the Look / Outfits & Coordinated Bundles --------------------------
+
+export type OutfitStatus = "draft" | "published" | "archived";
+export type BundleDiscountType = "none" | "percent" | "fixed";
+
+export interface BundlePricing {
+  is_eligible: boolean;
+  bundle_discount_type: BundleDiscountType;
+  bundle_discount_value: string;
+  discount_amount: string;
+  subtotal: string;
+  final_total: string;
+  savings_label: string;
+  required_items_count: number;
+}
+
+export interface OutfitItemLight {
+  id: number;
+  product_id: number;
+  product_name: string;
+  product_slug: string;
+  price: string;
+  is_featured_item: boolean;
+  styling_note: string;
+}
+
+export interface OutfitItemDetail {
+  id: number;
+  product: ProductDetail;
+  position: number;
+  styling_note: string;
+  is_featured_item: boolean;
+}
+
+export interface OutfitSummary {
+  id: number;
+  name: string;
+  slug: string;
+  description: string;
+  cover_image: string;
+  cover_image_alt: string;
+  hero_image: string;
+  status: OutfitStatus;
+  is_featured: boolean;
+  sort_order: number;
+  bundle_discount_type: BundleDiscountType;
+  bundle_discount_value: string;
+  bundle_min_items: number;
+  items_count: number;
+  items: OutfitItemLight[];
+  total_price: string;
+  bundle_pricing: BundlePricing;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OutfitDetail {
+  id: number;
+  name: string;
+  slug: string;
+  description: string;
+  cover_image: string;
+  cover_image_alt: string;
+  hero_image: string;
+  gallery_images: { url: string; alt?: string }[];
+  status: OutfitStatus;
+  is_featured: boolean;
+  sort_order: number;
+  bundle_discount_type: BundleDiscountType;
+  bundle_discount_value: string;
+  bundle_min_items: number;
+  items_count: number;
+  items: OutfitItemDetail[];
+  bundle_pricing: BundlePricing;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AddOutfitToCartItem {
+  product_id: number;
+  variant_id: number;
+  quantity: number;
+}
+
+export interface AddOutfitToCartInput {
+  items: AddOutfitToCartItem[];
+}
+
+export interface AddOutfitToCartResult {
+  cart: Cart;
+  items_added: number;
+  bundle_applied: boolean;
+  bundle_discount: string;
+  bundle_coupon_code: string | null;
+  savings_label: string;
+  message: string;
+}
+
+export interface AdminOutfitItemInput {
+  product_id: number;
+  position: number;
+  styling_note?: string;
+  is_featured_item?: boolean;
+}
+
+export interface AdminOutfitInput {
+  name: string;
+  slug?: string;
+  description?: string;
+  cover_image?: string;
+  cover_image_alt?: string;
+  hero_image?: string;
+  gallery_images?: { url: string; alt?: string }[];
+  status: OutfitStatus;
+  is_featured?: boolean;
+  sort_order?: number;
+  bundle_discount_type: BundleDiscountType;
+  bundle_discount_value: string | number;
+  bundle_min_items?: number;
+  items?: AdminOutfitItemInput[];
+}

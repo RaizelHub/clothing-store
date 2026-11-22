@@ -1,7 +1,8 @@
 import { seedDB } from "./seed";
 
 export type DBState = ReturnType<typeof seedDB>;
-export type { DBProduct, DBVariant, DBUser, DBCartItem, DBOrder } from "./seed";
+export type { DBProduct, DBVariant, DBUser, DBCartItem, DBOrder, DBOutfit, DBOutfitItem } from "./seed";
+
 
 const KEY = "studio_mock_db_v2";
 
@@ -13,6 +14,9 @@ export function getDB(): DBState {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       db = JSON.parse(raw) as DBState;
+      if (!db.outfits) {
+        db.outfits = seedDB().outfits;
+      }
       return db;
     }
   } catch {

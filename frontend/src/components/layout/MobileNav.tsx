@@ -11,6 +11,7 @@ const NAVIGATION_ITEMS = [
   { label: "Women's Collection", href: "/women", note: "Find your favorites" },
   { label: "Men's Collection", href: "/men", note: "Tailored essentials" },
   { label: "Collections", href: "/collections", note: "Seasonal edits" },
+  { label: "Shop the Look", href: "/looks", note: "Curated styling" },
 ];
 
 export function MobileNav() {

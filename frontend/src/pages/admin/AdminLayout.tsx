@@ -10,6 +10,7 @@ const NAV = [
   { label: "Products", to: "/admin/products" },
   { label: "Inventory", to: "/admin/inventory" },
   { label: "Collections", to: "/admin/collections" },
+  { label: "Looks", to: "/admin/looks" },
   { label: "Discounts", to: "/admin/discounts" },
   { label: "Reviews", to: "/admin/reviews" },
   { label: "Settings", to: "/admin/settings" },

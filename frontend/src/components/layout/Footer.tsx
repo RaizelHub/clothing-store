@@ -78,6 +78,14 @@ export function Footer() {
                   Seasonal Edits
                 </Link>
               </li>
+              <li>
+                <Link
+                  to="/looks"
+                  className="transition-colors hover:text-ink"
+                >
+                  Shop the Look
+                </Link>
+              </li>
             </ul>
           </div>
 

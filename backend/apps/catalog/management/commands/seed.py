@@ -5,7 +5,19 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from apps.catalog.models import Category, Collection, Color, Product, ProductImage, ProductVariant, Review, Size, StoreSettings
+from apps.catalog.models import (
+    Category,
+    Collection,
+    Color,
+    Outfit,
+    OutfitItem,
+    Product,
+    ProductImage,
+    ProductVariant,
+    Review,
+    Size,
+    StoreSettings,
+)
 from apps.orders.models import Coupon, NewsletterSubscription, Order, OrderItem
 
 User = get_user_model()
@@ -651,6 +663,7 @@ class Command(BaseCommand):
         self._coupons()
         self._reviews()
         self._collections()
+        self._outfits(products)
         self._newsletter()
         self.stdout.write(self.style.SUCCESS("Seed complete."))
 
@@ -664,6 +677,8 @@ class Command(BaseCommand):
         Review.objects.all().delete()
         for model in Orders:
             model.objects.all().delete()
+        OutfitItem.objects.all().delete()
+        Outfit.objects.all().delete()
         Collection.objects.all().delete()
         ProductImage.objects.all().delete()
         ProductVariant.objects.all().delete()
@@ -898,3 +913,125 @@ class Command(BaseCommand):
     def _newsletter(self):
         for email in NEWSLETTER:
             NewsletterSubscription.objects.get_or_create(email=email)
+
+    def _outfits(self, products: dict[int, Product]):
+        # 1. Weekend Neutrals
+        o1 = Outfit.objects.create(
+            name="Weekend Neutrals",
+            slug="weekend-neutrals",
+            description="A tonal silhouette designed for unhurried weekend mornings. Crisp linen relaxed over an essential heavyweight tee, grounded by tailored trousers.",
+            cover_image="https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80",
+            cover_image_alt="Model wearing Relaxed Linen Shirt and Trousers in tonal stone",
+            status=Outfit.STATUS_PUBLISHED,
+            is_featured=True,
+            sort_order=1,
+            bundle_discount_type=Outfit.DISCOUNT_PERCENT,
+            bundle_discount_value=Decimal("15.00"),
+            bundle_min_items=2,
+        )
+        OutfitItem.objects.create(
+            outfit=o1,
+            product=Product.objects.get(slug="relaxed-linen-shirt"),
+            position=0,
+            styling_note="Wear unbuttoned over the tee with sleeves rolled once.",
+            is_featured_item=True,
+        )
+        OutfitItem.objects.create(
+            outfit=o1,
+            product=Product.objects.get(slug="essential-oversized-tee"),
+            position=1,
+            styling_note="Tucked cleanly at the front waist.",
+            is_featured_item=False,
+        )
+        OutfitItem.objects.create(
+            outfit=o1,
+            product=Product.objects.get(slug="straight-leg-trouser"),
+            position=2,
+            styling_note="Tailored break sitting slightly above the ankle.",
+            is_featured_item=False,
+        )
+
+        # 2. Atelier Monochrome
+        o2 = Outfit.objects.create(
+            name="Atelier Monochrome",
+            slug="atelier-monochrome",
+            description="Refined proportions cut in charcoal and midnight. The soft-shouldered wool overcoat layers effortlessly across fine-gauge merino and structured trousers.",
+            cover_image="https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1200&q=80",
+            cover_image_alt="Atelier Monochrome styling with wool overcoat and merino knit",
+            status=Outfit.STATUS_PUBLISHED,
+            is_featured=True,
+            sort_order=2,
+            bundle_discount_type=Outfit.DISCOUNT_FIXED,
+            bundle_discount_value=Decimal("500.00"),
+            bundle_min_items=2,
+        )
+        OutfitItem.objects.create(
+            outfit=o2,
+            product=Product.objects.get(slug="wool-blend-overcoat"),
+            position=0,
+            styling_note="Statement outer piece; soft drape across shoulders.",
+            is_featured_item=True,
+        )
+        OutfitItem.objects.create(
+            outfit=o2,
+            product=Product.objects.get(slug="merino-crewneck"),
+            position=1,
+            styling_note="Close-to-skin layer in ultra-fine 17.5 micron merino.",
+            is_featured_item=False,
+        )
+        OutfitItem.objects.create(
+            outfit=o2,
+            product=Product.objects.get(slug="straight-leg-trouser"),
+            position=2,
+            styling_note="Flat front drape complementing the coat length.",
+            is_featured_item=False,
+        )
+
+        # 3. Urban Minimalist
+        o3 = Outfit.objects.create(
+            name="Urban Minimalist",
+            slug="urban-minimalist",
+            description="Boxy 14oz selvedge denim paired with an oversized cotton foundation. Built for enduring city movements.",
+            cover_image="https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=1200&q=80",
+            cover_image_alt="Urban Minimalist selvedge denim styling",
+            status=Outfit.STATUS_PUBLISHED,
+            is_featured=False,
+            sort_order=3,
+            bundle_discount_type=Outfit.DISCOUNT_PERCENT,
+            bundle_discount_value=Decimal("10.00"),
+            bundle_min_items=0,
+        )
+        OutfitItem.objects.create(
+            outfit=o3,
+            product=Product.objects.get(slug="selvedge-denim-jacket"),
+            position=0,
+            styling_note="Rigid raw selvedge; button middle two buttons only.",
+            is_featured_item=True,
+        )
+        OutfitItem.objects.create(
+            outfit=o3,
+            product=Product.objects.get(slug="essential-oversized-tee"),
+            position=1,
+            styling_note="Contrasting white hem showing beneath the jacket.",
+            is_featured_item=False,
+        )
+
+        # 4. Studio Casual Edit (Draft for testing unpublished security)
+        o4 = Outfit.objects.create(
+            name="Studio Casual Edit",
+            slug="studio-casual-edit",
+            description="An upcoming seasonal capsule pairing effortless shirting with lightweight layering.",
+            cover_image="https://images.unsplash.com/photo-1485230895905-ec40ba36b9bc?auto=format&fit=crop&w=1200&q=80",
+            cover_image_alt="Studio Casual Edit draft shoot",
+            status=Outfit.STATUS_DRAFT,
+            is_featured=False,
+            sort_order=4,
+            bundle_discount_type=Outfit.DISCOUNT_NONE,
+        )
+        OutfitItem.objects.create(
+            outfit=o4,
+            product=Product.objects.get(slug="relaxed-linen-shirt"),
+            position=0,
+            styling_note="Lightweight linen for warmer climates.",
+            is_featured_item=True,
+        )

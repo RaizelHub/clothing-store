@@ -30,6 +30,8 @@ from .models import (
     Category,
     Collection,
     Color,
+    Outfit,
+    OutfitItem,
     Product,
     ProductImage,
     ProductVariant,
@@ -38,11 +40,15 @@ from .models import (
     StoreSettings,
 )
 from .serializers import (
+    AddOutfitToCartInputSerializer,
+    AdminOutfitInputSerializer,
     AdminProductInputSerializer,
     CategorySerializer,
     CollectionSerializer,
     ColorSerializer,
     InventoryRowSerializer,
+    OutfitDetailSerializer,
+    OutfitSummarySerializer,
     ProductDetailSerializer,
     ProductImageSerializer,
     ProductSummarySerializer,
@@ -890,3 +896,263 @@ def admin_settings(request):
     ser.is_valid(raise_exception=True)
     ser.save()
     return Response(StoreSettingsSerializer(StoreSettings.get_solo()).data)
+
+
+# --- Shop the Look / Outfits & Coordinated Bundles --------------------------
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def outfit_list(request):
+    """
+    GET /api/looks/ and /api/outfits/
+    Public listing of published Shop the Look outfits.
+    """
+    qs = Outfit.objects.filter(status=Outfit.STATUS_PUBLISHED).prefetch_related("items__product")
+    if request.query_params.get("featured") == "true":
+        qs = qs.filter(is_featured=True)
+    return Response(OutfitSummarySerializer(qs, many=True).data)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def outfit_detail(request, slug):
+    """
+    GET /api/looks/<slug>/ and /api/outfits/<slug>/
+    Detailed outfit spread with all styled products, colorways, sizes, and bundle pricing.
+    Draft outfits are accessible to staff for real-time editorial preview.
+    """
+    outfit = (
+        Outfit.objects.filter(slug=slug)
+        .prefetch_related(
+            "items__product__images",
+            "items__product__variants__color",
+            "items__product__variants__size",
+        )
+        .first()
+    )
+    if not outfit:
+        raise NotFound("Outfit not found.")
+
+    if outfit.status != Outfit.STATUS_PUBLISHED and not (
+        request.user and request.user.is_authenticated and request.user.is_staff
+    ):
+        raise NotFound("Outfit not found.")
+
+    return Response(OutfitDetailSerializer(outfit).data)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def outfit_add_to_cart(request, slug):
+    """
+    POST /api/looks/<slug>/add-to-cart/
+    Atomically adds the selected outfit items to the customer's cart.
+    Validates variants, inventory availability, pricing, and bundle discount qualifications.
+    """
+    outfit = Outfit.objects.filter(slug=slug).first()
+    if not outfit:
+        raise NotFound("Outfit not found.")
+
+    if outfit.status != Outfit.STATUS_PUBLISHED and not (
+        request.user and request.user.is_authenticated and request.user.is_staff
+    ):
+        raise NotFound("Outfit not found or is currently unavailable.")
+
+    ser = AddOutfitToCartInputSerializer(data=request.data)
+    ser.is_valid(raise_exception=True)
+    submitted_items = ser.validated_data["items"]
+
+    if not submitted_items:
+        raise ValidationError({"items": ["At least one item must be selected from the look."]})
+
+    # Verify every product belongs to this outfit
+    outfit_product_ids = set(outfit.items.values_list("product_id", flat=True))
+
+    from apps.orders.models import CartItem, Coupon
+    from apps.orders.views import _cart, _cart_data
+
+    variant_ids = [it["variant_id"] for it in submitted_items]
+    variants_by_id = {
+        v.id: v
+        for v in ProductVariant.objects.select_related("product", "size", "color").filter(id__in=variant_ids)
+    }
+
+    # Validate stock and product association
+    for it in submitted_items:
+        p_id = it["product_id"]
+        v_id = it["variant_id"]
+        qty = it.get("quantity", 1)
+
+        if p_id not in outfit_product_ids:
+            raise ValidationError({"items": [f"Product ID {p_id} is not part of this look."]})
+
+        v = variants_by_id.get(v_id)
+        if not v or v.product_id != p_id:
+            raise ValidationError({"items": [f"Selected variant {v_id} does not belong to product {p_id}."]})
+
+        if v.stock < qty:
+            raise ValidationError({
+                "stock": [f"'{v.product.name}' ({v.color.name} / {v.size.name}) is out of stock ({v.stock} available)."],
+                "unavailable_variant_id": v.id,
+            })
+
+    # Atomic cart update
+    with transaction.atomic():
+        cart = _cart(request)
+        for it in submitted_items:
+            v = variants_by_id[it["variant_id"]]
+            qty = it.get("quantity", 1)
+            cart_item, created = CartItem.objects.get_or_create(
+                cart=cart, variant=v, defaults={"quantity": qty}
+            )
+            if not created:
+                cart_item.quantity = min(cart_item.quantity + qty, v.stock)
+                cart_item.save(update_fields=["quantity"])
+
+    # Calculate bundle discount
+    subtotal = sum(
+        (variants_by_id[it["variant_id"]].effective_price() * it.get("quantity", 1) for it in submitted_items),
+        Decimal("0.00"),
+    )
+    calc = outfit.calculate_bundle_pricing(len(submitted_items), subtotal)
+
+    # If bundle discount applies, ensure an active Coupon exists
+    coupon_code = None
+    if calc["is_eligible"]:
+        coupon_code = f"BUNDLE-{outfit.slug.upper()[:25]}"
+        coupon_type = (
+            Coupon.TYPE_PERCENT if outfit.bundle_discount_type == Outfit.DISCOUNT_PERCENT else Coupon.TYPE_FIXED
+        )
+        Coupon.objects.update_or_create(
+            code=coupon_code,
+            defaults={
+                "type": coupon_type,
+                "value": outfit.bundle_discount_value,
+                "min_order_value": Decimal("0.00"),
+                "is_active": True,
+            },
+        )
+
+    return Response(
+        {
+            "cart": _cart_data(cart),
+            "items_added": len(submitted_items),
+            "bundle_applied": calc["is_eligible"],
+            "bundle_discount": str(calc["discount_amount"]),
+            "bundle_coupon_code": coupon_code,
+            "savings_label": calc["savings_label"],
+            "message": f"Added {len(submitted_items)} items from {outfit.name} to your bag.",
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+# --- Admin Outfit Endpoints -------------------------------------------------
+
+
+def _sync_outfit_items(outfit: Outfit, items_data: list):
+    outfit.items.all().delete()
+    for idx, item_data in enumerate(items_data):
+        product_id = item_data.get("product_id")
+        product = Product.objects.filter(id=product_id).first()
+        if product:
+            OutfitItem.objects.create(
+                outfit=outfit,
+                product=product,
+                position=item_data.get("position", idx),
+                styling_note=item_data.get("styling_note", ""),
+                is_featured_item=item_data.get("is_featured_item", False),
+            )
+
+
+@api_view(["GET", "POST"])
+def admin_outfits_view(request):
+    _require_staff(request)
+    if request.method == "GET":
+        qs = Outfit.objects.prefetch_related("items__product").all()
+        status_param = request.query_params.get("status")
+        if status_param and status_param != "all":
+            qs = qs.filter(status=status_param)
+        return Response(OutfitSummarySerializer(qs, many=True).data)
+
+    ser = AdminOutfitInputSerializer(data=request.data)
+    ser.is_valid(raise_exception=True)
+    data = ser.validated_data
+
+    slug_val = slugify(data.get("slug") or data["name"])
+    base_slug = slug_val
+    counter = 1
+    while Outfit.objects.filter(slug=slug_val).exists():
+        slug_val = f"{base_slug}-{counter}"
+        counter += 1
+
+    with transaction.atomic():
+        outfit = Outfit.objects.create(
+            name=data["name"],
+            slug=slug_val,
+            description=data.get("description", ""),
+            cover_image=data.get("cover_image", ""),
+            cover_image_alt=data.get("cover_image_alt", ""),
+            hero_image=data.get("hero_image", ""),
+            gallery_images=data.get("gallery_images", []),
+            status=data.get("status", Outfit.STATUS_DRAFT),
+            is_featured=data.get("is_featured", False),
+            sort_order=data.get("sort_order", 0),
+            bundle_discount_type=data.get("bundle_discount_type", Outfit.DISCOUNT_NONE),
+            bundle_discount_value=data.get("bundle_discount_value", Decimal("0.00")),
+            bundle_min_items=data.get("bundle_min_items", 0),
+        )
+        if "items" in data:
+            _sync_outfit_items(outfit, data["items"])
+
+    return Response(OutfitDetailSerializer(outfit).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET", "PATCH", "PUT", "DELETE"])
+def admin_outfit_detail(request, pk):
+    _require_staff(request)
+    outfit = Outfit.objects.filter(pk=pk).first()
+    if not outfit:
+        raise NotFound("Outfit not found.")
+
+    if request.method == "GET":
+        return Response(OutfitDetailSerializer(outfit).data)
+
+    if request.method == "DELETE":
+        outfit.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    ser = AdminOutfitInputSerializer(data=request.data, partial=True)
+    ser.is_valid(raise_exception=True)
+    data = ser.validated_data
+
+    with transaction.atomic():
+        if "name" in data and data["name"] != outfit.name:
+            outfit.name = data["name"]
+        if "slug" in data and data["slug"] and data["slug"] != outfit.slug:
+            slug_cand = slugify(data["slug"])
+            if Outfit.objects.filter(slug=slug_cand).exclude(pk=outfit.pk).exists():
+                raise ValidationError({"slug": ["An outfit with this slug already exists."]})
+            outfit.slug = slug_cand
+        for f in [
+            "description",
+            "cover_image",
+            "cover_image_alt",
+            "hero_image",
+            "gallery_images",
+            "status",
+            "is_featured",
+            "sort_order",
+            "bundle_discount_type",
+            "bundle_discount_value",
+            "bundle_min_items",
+        ]:
+            if f in data:
+                setattr(outfit, f, data[f])
+        outfit.save()
+
+        if "items" in data:
+            _sync_outfit_items(outfit, data["items"])
+
+    return Response(OutfitDetailSerializer(outfit).data)

@@ -732,11 +732,40 @@ function buildProducts(): DBProduct[] {
   return list;
 }
 
+export interface DBOutfitItem {
+  id: number;
+  product_id: number;
+  position: number;
+  styling_note: string;
+  is_featured_item: boolean;
+}
+
+export interface DBOutfit {
+  id: number;
+  name: string;
+  slug: string;
+  description: string;
+  cover_image: string;
+  cover_image_alt: string;
+  hero_image: string;
+  gallery_images: { url: string; alt?: string }[];
+  status: "draft" | "published" | "archived";
+  is_featured: boolean;
+  sort_order: number;
+  bundle_discount_type: "none" | "percent" | "fixed";
+  bundle_discount_value: string;
+  bundle_min_items: number;
+  items: DBOutfitItem[];
+  created_at: string;
+  updated_at: string;
+}
+
 export function seedDB(): {
   colors: Color[];
   sizes: Size[];
   categories: Category[];
   collections: Collection[];
+  outfits: DBOutfit[];
   products: DBProduct[];
   users: DBUser[];
   carts: Record<string, DBCartItem[]>;
@@ -1058,11 +1087,182 @@ export function seedDB(): {
     },
   ];
 
+  const outfits: DBOutfit[] = [
+    {
+      id: 1,
+      name: "Weekend Neutrals",
+      slug: "weekend-neutrals",
+      description:
+        "A tonal silhouette designed for unhurried weekend mornings. Crisp linen relaxed over an essential heavyweight tee, grounded by tailored trousers.",
+      cover_image:
+        "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80",
+      cover_image_alt: "Model wearing Relaxed Linen Shirt and Trousers in tonal stone",
+      hero_image:
+        "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1600&q=80",
+      gallery_images: [
+        {
+          url: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80",
+          alt: "Full silhouette front angle",
+        },
+        {
+          url: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1200&q=80",
+          alt: "Close crop on linen texture and layering",
+        },
+      ],
+      status: "published",
+      is_featured: true,
+      sort_order: 1,
+      bundle_discount_type: "percent",
+      bundle_discount_value: "15.00",
+      bundle_min_items: 2,
+      items: [
+        {
+          id: 1,
+          product_id: 2,
+          position: 0,
+          styling_note: "Wear unbuttoned over the tee with sleeves rolled once.",
+          is_featured_item: true,
+        },
+        {
+          id: 2,
+          product_id: 1,
+          position: 1,
+          styling_note: "Tucked cleanly at the front waist.",
+          is_featured_item: false,
+        },
+        {
+          id: 3,
+          product_id: 6,
+          position: 2,
+          styling_note: "Tailored break sitting slightly above the ankle.",
+          is_featured_item: false,
+        },
+      ],
+      created_at: iso(10),
+      updated_at: iso(1),
+    },
+    {
+      id: 2,
+      name: "Atelier Monochrome",
+      slug: "atelier-monochrome",
+      description:
+        "Refined proportions cut in charcoal and midnight. The soft-shouldered wool overcoat layers effortlessly across fine-gauge merino and structured trousers.",
+      cover_image:
+        "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1200&q=80",
+      cover_image_alt: "Atelier Monochrome styling with wool overcoat and merino knit",
+      hero_image:
+        "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1600&q=80",
+      gallery_images: [
+        {
+          url: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1200&q=80",
+          alt: "Overcoat drape profile",
+        },
+      ],
+      status: "published",
+      is_featured: true,
+      sort_order: 2,
+      bundle_discount_type: "fixed",
+      bundle_discount_value: "500.00",
+      bundle_min_items: 2,
+      items: [
+        {
+          id: 4,
+          product_id: 5,
+          position: 0,
+          styling_note: "Statement outer piece; soft drape across shoulders.",
+          is_featured_item: true,
+        },
+        {
+          id: 5,
+          product_id: 3,
+          position: 1,
+          styling_note: "Close-to-skin layer in ultra-fine 17.5 micron merino.",
+          is_featured_item: false,
+        },
+        {
+          id: 6,
+          product_id: 6,
+          position: 2,
+          styling_note: "Flat front drape complementing the coat length.",
+          is_featured_item: false,
+        },
+      ],
+      created_at: iso(12),
+      updated_at: iso(2),
+    },
+    {
+      id: 3,
+      name: "Urban Minimalist",
+      slug: "urban-minimalist",
+      description:
+        "Boxy 14oz selvedge denim paired with an oversized cotton foundation. Built for enduring city movements.",
+      cover_image:
+        "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=1200&q=80",
+      cover_image_alt: "Urban Minimalist selvedge denim styling",
+      hero_image:
+        "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=1600&q=80",
+      gallery_images: [],
+      status: "published",
+      is_featured: false,
+      sort_order: 3,
+      bundle_discount_type: "percent",
+      bundle_discount_value: "10.00",
+      bundle_min_items: 0,
+      items: [
+        {
+          id: 7,
+          product_id: 4,
+          position: 0,
+          styling_note: "Rigid raw selvedge; button middle two buttons only.",
+          is_featured_item: true,
+        },
+        {
+          id: 8,
+          product_id: 1,
+          position: 1,
+          styling_note: "Contrasting white hem showing beneath the jacket.",
+          is_featured_item: false,
+        },
+      ],
+      created_at: iso(15),
+      updated_at: iso(3),
+    },
+    {
+      id: 4,
+      name: "Studio Casual Edit",
+      slug: "studio-casual-edit",
+      description: "An upcoming seasonal capsule pairing effortless shirting with lightweight layering.",
+      cover_image:
+        "https://images.unsplash.com/photo-1485230895905-ec40ba36b9bc?auto=format&fit=crop&w=1200&q=80",
+      cover_image_alt: "Studio Casual Edit draft shoot",
+      hero_image: "",
+      gallery_images: [],
+      status: "draft",
+      is_featured: false,
+      sort_order: 4,
+      bundle_discount_type: "none",
+      bundle_discount_value: "0.00",
+      bundle_min_items: 0,
+      items: [
+        {
+          id: 9,
+          product_id: 2,
+          position: 0,
+          styling_note: "Lightweight linen for warmer climates.",
+          is_featured_item: true,
+        },
+      ],
+      created_at: iso(20),
+      updated_at: iso(5),
+    },
+  ];
+
   return {
     colors: COLORS,
     sizes: SIZES,
     categories: CATEGORIES,
     collections,
+    outfits,
     products,
     users: [admin, ...customers],
     carts: {},

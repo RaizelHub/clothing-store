@@ -10,7 +10,8 @@
 import type { AxiosResponse } from "axios";
 import { AxiosError } from "axios";
 import type { InternalAxiosRequestConfig } from "axios";
-import type { DBState, DBProduct, DBVariant, DBUser, DBCartItem, DBOrder } from "./db";
+import type { DBState, DBProduct, DBVariant, DBUser, DBCartItem, DBOrder, DBOutfit, DBOutfitItem } from "./db";
+
 import { getDB, saveDB } from "./db";
 import { nextId } from "./seed";
 import { placeholderImage } from "@/lib/format";
@@ -194,6 +195,105 @@ function productDetail(db: DBState, p: DBProduct): ProductDetail {
 function productBySlug(db: DBState, slug: string): DBProduct | null {
   return db.products.find((p) => p.slug === slug) ?? null;
 }
+
+function outfitPricing(db: DBState, o: DBOutfit, selectedCount?: number) {
+  const items = o.items
+    .map((it) => {
+      const p = db.products.find((prod) => prod.id === it.product_id);
+      return p ? { it, p } : null;
+    })
+    .filter((item): item is { it: DBOutfitItem; p: DBProduct } => Boolean(item));
+
+  const subtotalCents = items.reduce((sum, item) => {
+    return sum + (item.p.sale_price_cents ?? item.p.base_price_cents);
+  }, 0);
+
+  const count = selectedCount ?? items.length;
+  const req = o.bundle_min_items > 0 ? o.bundle_min_items : items.length;
+  const eligible =
+    o.bundle_discount_type !== "none" &&
+    Number(o.bundle_discount_value) > 0 &&
+    count >= req &&
+    count > 0;
+
+  let discountCents = 0;
+  let savingsLabel = "";
+  if (eligible) {
+    if (o.bundle_discount_type === "percent") {
+      discountCents = Math.round(subtotalCents * (Number(o.bundle_discount_value) / 100));
+      savingsLabel = `Bundle Savings: ${o.bundle_discount_value}% Off`;
+    } else if (o.bundle_discount_type === "fixed") {
+      discountCents = Math.min(Math.round(Number(o.bundle_discount_value) * 100), subtotalCents);
+      savingsLabel = `Bundle Savings: ₱${o.bundle_discount_value} Off`;
+    }
+  }
+  const finalCents = Math.max(0, subtotalCents - discountCents);
+
+  return {
+    is_eligible: eligible,
+    bundle_discount_type: o.bundle_discount_type,
+    bundle_discount_value: o.bundle_discount_value,
+    discount_amount: centsToStr(discountCents),
+    subtotal: centsToStr(subtotalCents),
+    final_total: centsToStr(finalCents),
+    savings_label: savingsLabel,
+    required_items_count: req,
+  };
+}
+
+function outfitSummary(db: DBState, o: DBOutfit) {
+  const bp = outfitPricing(db, o);
+  return {
+    id: o.id,
+    name: o.name,
+    slug: o.slug,
+    description: o.description,
+    cover_image: o.cover_image,
+    cover_image_alt: o.cover_image_alt,
+    hero_image: o.hero_image,
+    status: o.status,
+    is_featured: o.is_featured,
+    sort_order: o.sort_order,
+    bundle_discount_type: o.bundle_discount_type,
+    bundle_discount_value: o.bundle_discount_value,
+    bundle_min_items: o.bundle_min_items,
+    items_count: o.items.length,
+    items: o.items.map((it) => {
+      const p = db.products.find((prod) => prod.id === it.product_id);
+      return {
+        id: it.id,
+        product_id: it.product_id,
+        product_name: p?.name ?? "",
+        product_slug: p?.slug ?? "",
+        price: p ? centsToStr(p.sale_price_cents ?? p.base_price_cents) : "0.00",
+        is_featured_item: it.is_featured_item,
+        styling_note: it.styling_note,
+      };
+    }),
+    total_price: bp.subtotal,
+    bundle_pricing: bp,
+    created_at: o.created_at,
+    updated_at: o.updated_at,
+  };
+}
+
+function outfitDetail(db: DBState, o: DBOutfit) {
+  return {
+    ...outfitSummary(db, o),
+    gallery_images: o.gallery_images ?? [],
+    items: o.items.map((it) => {
+      const p = db.products.find((prod) => prod.id === it.product_id);
+      return {
+        id: it.id,
+        product: p ? productDetail(db, p) : null,
+        position: it.position,
+        styling_note: it.styling_note,
+        is_featured_item: it.is_featured_item,
+      };
+    }),
+  };
+}
+
 
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
@@ -822,6 +922,111 @@ const routes: MockRoute[] = [
       });
     },
   },
+  // --- public looks / outfits ---
+  {
+    method: "get",
+    pattern: /^\/(?:looks|outfits)\/?$/,
+    handler: ({ db, query }) => {
+      let list = db.outfits.filter((o) => o.status === "published");
+      if (query.get("featured") === "true") list = list.filter((o) => o.is_featured);
+      return ok(
+        200,
+        list.sort((a, b) => a.sort_order - b.sort_order).map((o) => outfitSummary(db, o))
+      );
+    },
+  },
+  {
+    method: "get",
+    pattern: /^\/(?:looks|outfits)\/([a-z0-9-]+)\/?$/,
+    handler: ({ db, me }, m) => {
+      const o = db.outfits.find((look) => look.slug === m[1]);
+      if (!o) fail(404, { detail: "Look not found." });
+      if (o.status !== "published" && !me?.is_staff) fail(404, { detail: "Look not found." });
+      return ok(200, outfitDetail(db, o));
+    },
+  },
+  {
+    method: "post",
+    pattern: /^\/(?:looks|outfits)\/([a-z0-9-]+)\/add-to-cart\/?$/,
+    handler: ({ db, me, headers, body }, m) => {
+      const o = db.outfits.find((look) => look.slug === m[1]);
+      if (!o) fail(404, { detail: "Look not found." });
+      if (o.status !== "published" && !me?.is_staff) fail(404, { detail: "Look not found or unavailable." });
+
+      const items = (body.items as { product_id: number; variant_id: number; quantity?: number }[]) ?? [];
+      if (!items.length) fail(400, errField("items", "At least one item must be selected."));
+
+      const outfitProductIds = new Set(o.items.map((it) => it.product_id));
+
+      for (const it of items) {
+        if (!outfitProductIds.has(it.product_id)) {
+          fail(400, errField("items", `Product ${it.product_id} is not part of this look.`));
+        }
+        const p = db.products.find((prod) => prod.id === it.product_id);
+        const v = p?.variants.find((v) => v.id === it.variant_id);
+        if (!v) fail(400, errField("items", `Variant ${it.variant_id} does not belong to product ${it.product_id}.`));
+        const qty = Math.max(1, Number(it.quantity ?? 1));
+        if (v.stock < qty) {
+          fail(400, {
+            stock: [`${p?.name} (${v.sku}) is out of stock (${v.stock} available).`],
+            unavailable_variant_id: v.id,
+          });
+        }
+      }
+
+      // Add to cart atomically
+      const oKey = ownerKey(me, headers);
+      if (!db.carts[oKey]) db.carts[oKey] = [];
+      const cartItems = db.carts[oKey];
+
+      for (const it of items) {
+        const qty = Math.max(1, Number(it.quantity ?? 1));
+        const existing = cartItems.find((ci) => ci.variant_id === it.variant_id);
+        if (existing) {
+          existing.quantity += qty;
+        } else {
+          cartItems.push({
+            id: nextId(db.seq, "cartItem"),
+            variant_id: it.variant_id,
+            quantity: qty,
+          });
+        }
+      }
+
+      saveDB();
+
+      const pricing = outfitPricing(db, o, items.length);
+      let couponCode: string | null = null;
+      if (pricing.is_eligible) {
+        couponCode = `BUNDLE-${o.slug.toUpperCase().slice(0, 25)}`;
+        if (!db.coupons.some((c) => c.code === couponCode)) {
+          db.coupons.push({
+            id: nextId(db.seq, "coupon"),
+            code: couponCode,
+            type: o.bundle_discount_type === "percent" ? "percent" : "fixed",
+            value: Number(o.bundle_discount_value),
+            min_order_value: "0.00",
+            max_uses: null,
+            uses: 0,
+            expires_at: null,
+            is_active: true,
+          });
+          saveDB();
+        }
+      }
+
+      return ok(201, {
+        cart: getCart(db, me, headers),
+        items_added: items.length,
+        bundle_applied: pricing.is_eligible,
+        bundle_discount: pricing.discount_amount,
+        bundle_coupon_code: couponCode,
+        savings_label: pricing.savings_label,
+        message: `Added ${items.length} items from ${o.name} to your bag.`,
+      });
+    },
+  },
+
   {
     method: "get",
     pattern: /^\/products\/?$/,
@@ -1577,6 +1782,130 @@ const routes: MockRoute[] = [
       return ok(204, null);
     },
   },
+
+  // --- admin: looks / outfits ---
+  {
+    method: "get",
+    pattern: /^\/admin\/(?:looks|outfits)\/?$/,
+    handler: ({ db, me, query }) => {
+      if (!me?.is_staff) fail(403, { detail: "Staff only." });
+      let list = db.outfits;
+      const statusParam = query.get("status");
+      if (statusParam && statusParam !== "all") {
+        list = list.filter((o) => o.status === statusParam);
+      }
+      return ok(
+        200,
+        list.sort((a, b) => a.sort_order - b.sort_order).map((o) => outfitSummary(db, o))
+      );
+    },
+  },
+  {
+    method: "post",
+    pattern: /^\/admin\/(?:looks|outfits)\/?$/,
+    handler: ({ db, me, body }) => {
+      if (!me?.is_staff) fail(403, { detail: "Staff only." });
+      let slug = slugify(String(body.slug || body.name || ""));
+      if (!slug) fail(400, errField("name", "Name is required."));
+      let suffix = 2;
+      while (db.outfits.some((o) => o.slug === slug)) {
+        slug = `${slugify(String(body.name))}-${suffix++}`;
+      }
+      const rawItems = (body.items as { product_id: number; position?: number; styling_note?: string; is_featured_item?: boolean }[]) ?? [];
+      const outfit: DBOutfit = {
+        id: nextId(db.seq, "coupon"),
+        name: String(body.name),
+        slug,
+        description: String(body.description ?? ""),
+        cover_image: String(body.cover_image ?? ""),
+        cover_image_alt: String(body.cover_image_alt ?? ""),
+        hero_image: String(body.hero_image ?? ""),
+        gallery_images: (body.gallery_images as { url: string; alt?: string }[]) ?? [],
+        status: (body.status as "draft" | "published" | "archived") ?? "draft",
+        is_featured: Boolean(body.is_featured),
+        sort_order: Number(body.sort_order ?? 0),
+        bundle_discount_type: (body.bundle_discount_type as "none" | "percent" | "fixed") ?? "none",
+        bundle_discount_value: String(body.bundle_discount_value ?? "0.00"),
+        bundle_min_items: Number(body.bundle_min_items ?? 0),
+        items: rawItems.map((it, idx) => ({
+          id: idx + 1,
+          product_id: Number(it.product_id),
+          position: it.position ?? idx,
+          styling_note: it.styling_note ?? "",
+          is_featured_item: Boolean(it.is_featured_item),
+        })),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      db.outfits.push(outfit);
+      saveDB();
+      return ok(201, outfitDetail(db, outfit));
+    },
+  },
+  {
+    method: "get",
+    pattern: /^\/admin\/(?:looks|outfits)\/(\d+)\/?$/,
+    handler: ({ db, me }, m) => {
+      if (!me?.is_staff) fail(403, { detail: "Staff only." });
+      const o = db.outfits.find((look) => look.id === Number(m[1]));
+      if (!o) fail(404, { detail: "Look not found." });
+      return ok(200, outfitDetail(db, o));
+    },
+  },
+  {
+    method: "patch",
+    pattern: /^\/admin\/(?:looks|outfits)\/(\d+)\/?$/,
+    handler: ({ db, me, body }, m) => {
+      if (!me?.is_staff) fail(403, { detail: "Staff only." });
+      const o = db.outfits.find((look) => look.id === Number(m[1]));
+      if (!o) fail(404, { detail: "Look not found." });
+
+      if (body.name !== undefined) o.name = String(body.name);
+      if (body.slug !== undefined && body.slug !== o.slug) {
+        const newSlug = slugify(String(body.slug));
+        if (db.outfits.some((other) => other.id !== o.id && other.slug === newSlug)) {
+          fail(400, errField("slug", "An outfit with this slug already exists."));
+        }
+        o.slug = newSlug;
+      }
+      if (body.description !== undefined) o.description = String(body.description);
+      if (body.cover_image !== undefined) o.cover_image = String(body.cover_image);
+      if (body.cover_image_alt !== undefined) o.cover_image_alt = String(body.cover_image_alt);
+      if (body.hero_image !== undefined) o.hero_image = String(body.hero_image);
+      if (body.gallery_images !== undefined) o.gallery_images = body.gallery_images as { url: string; alt?: string }[];
+      if (body.status !== undefined) o.status = body.status as "draft" | "published" | "archived";
+      if (body.is_featured !== undefined) o.is_featured = Boolean(body.is_featured);
+      if (body.sort_order !== undefined) o.sort_order = Number(body.sort_order);
+      if (body.bundle_discount_type !== undefined) o.bundle_discount_type = body.bundle_discount_type as "none" | "percent" | "fixed";
+      if (body.bundle_discount_value !== undefined) o.bundle_discount_value = String(body.bundle_discount_value);
+      if (body.bundle_min_items !== undefined) o.bundle_min_items = Number(body.bundle_min_items);
+
+      if (body.items !== undefined) {
+        const rawItems = (body.items as { product_id: number; position?: number; styling_note?: string; is_featured_item?: boolean }[]) ?? [];
+        o.items = rawItems.map((it, idx) => ({
+          id: idx + 1,
+          product_id: Number(it.product_id),
+          position: it.position ?? idx,
+          styling_note: it.styling_note ?? "",
+          is_featured_item: Boolean(it.is_featured_item),
+        }));
+      }
+      o.updated_at = new Date().toISOString();
+      saveDB();
+      return ok(200, outfitDetail(db, o));
+    },
+  },
+  {
+    method: "delete",
+    pattern: /^\/admin\/(?:looks|outfits)\/(\d+)\/?$/,
+    handler: ({ db, me }, m) => {
+      if (!me?.is_staff) fail(403, { detail: "Staff only." });
+      db.outfits = db.outfits.filter((look) => look.id !== Number(m[1]));
+      saveDB();
+      return ok(204, null);
+    },
+  },
+
 
   // --- admin: coupons ---
   {
