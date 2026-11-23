@@ -33,6 +33,7 @@ function Price({ product }: { product: ProductSummary }) {
 }
 
 export function ProductCard({ product }: { product: ProductSummary }) {
+  const isSoldOut = product.in_stock === false || (product.badges && product.badges.includes("SOLD OUT"));
   const { data: wishlist = [] } = useWishlist();
   const { add, remove } = useWishlistActions();
   const wished = wishlist.some((w) => w.product.id === product.id);
@@ -148,7 +149,9 @@ export function ProductCard({ product }: { product: ProductSummary }) {
                 key={badge}
                 className={cn(
                   "px-2 py-0.5 text-[9px] uppercase tracking-widest font-mono font-medium",
-                  badge === "SALE"
+                  badge === "SOLD OUT"
+                    ? "bg-stone-900 text-stone-200 border border-stone-700 shadow-sm"
+                    : badge === "SALE"
                     ? "bg-accent text-white"
                     : "bg-ink text-paper",
                 )}
@@ -188,15 +191,21 @@ export function ProductCard({ product }: { product: ProductSummary }) {
         {/* Quick Add Bottom Bar / Trigger */}
         <div className="absolute inset-x-0 bottom-0 z-20 transition-all duration-300">
           {!quickAddOpen && (
-            <button
-              type="button"
-              ref={quickAddRef}
-              aria-expanded={quickAddOpen}
-              onClick={() => setQuickAddOpen(true)}
-              className="quick-add-trigger w-full bg-paper/95 py-2.5 px-3 text-center text-[10.5px] uppercase tracking-widest text-ink font-medium backdrop-blur-sm border-t border-stone-200/80 transition-all duration-300 hover:bg-ink hover:text-paper"
-            >
-              + Quick Add
-            </button>
+            isSoldOut ? (
+              <div className="w-full bg-stone-100/90 py-2.5 px-3 text-center text-[10.5px] uppercase tracking-widest text-stone-400 font-mono font-medium backdrop-blur-sm border-t border-stone-200/80 cursor-not-allowed">
+                Sold Out
+              </div>
+            ) : (
+              <button
+                type="button"
+                ref={quickAddRef}
+                aria-expanded={quickAddOpen}
+                onClick={() => setQuickAddOpen(true)}
+                className="quick-add-trigger w-full bg-paper/95 py-2.5 px-3 text-center text-[10.5px] uppercase tracking-widest text-ink font-medium backdrop-blur-sm border-t border-stone-200/80 transition-all duration-300 hover:bg-ink hover:text-paper"
+              >
+                + Quick Add
+              </button>
+            )
           )}
           <div
             className={cn("quick-add-panel", quickAddOpen && "is-open")}
@@ -310,6 +319,7 @@ export function ProductCard({ product }: { product: ProductSummary }) {
                   onMouseEnter={() => setActiveColorId(color.id)}
                   onClick={(e) => {
                     e.preventDefault();
+                    e.stopPropagation();
                     setActiveColorId(color.id);
                   }}
                   className={cn(

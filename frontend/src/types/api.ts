@@ -89,11 +89,12 @@ export interface ProductSummary {
   category_slug: string;
   is_featured: boolean;
   is_new: boolean;
+  in_stock: boolean;
   images: ProductImage[];
   colors: Color[];
   sizes: Size[];
   min_price: string;
-  badges: ("NEW" | "SALE" | "BESTSELLER")[];
+  badges: ("NEW" | "SALE" | "BESTSELLER" | "SOLD OUT")[];
 }
 
 export interface ProductDetail extends ProductSummary {
@@ -109,6 +110,8 @@ export interface ProductDetail extends ProductSummary {
 
 export interface ProductQuery {
   featured?: boolean;
+  new?: boolean | string;
+  in_stock?: boolean | string;
   ids?: number[];
   category?: string;
   collection?: string;

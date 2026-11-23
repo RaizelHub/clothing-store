@@ -117,6 +117,7 @@ class ProductSummarySerializer(serializers.ModelSerializer):
     sizes = serializers.SerializerMethodField()
     min_price = serializers.SerializerMethodField()
     badges = serializers.SerializerMethodField()
+    in_stock = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -133,6 +134,7 @@ class ProductSummarySerializer(serializers.ModelSerializer):
             "category_slug",
             "is_featured",
             "is_new",
+            "in_stock",
             "images",
             "colors",
             "sizes",
@@ -172,7 +174,12 @@ class ProductSummarySerializer(serializers.ModelSerializer):
         prices = [v.price_override or obj.sale_price or obj.base_price for v in obj.variants.all()]
         return to_str(min(prices, default=obj.base_price))
 
+    def get_in_stock(self, obj):
+        return any(v.stock > 0 for v in obj.variants.all())
+
     def get_badges(self, obj):
+        if not any(v.stock > 0 for v in obj.variants.all()):
+            return ["SOLD OUT"]
         badges = []
         if self.get_is_new(obj):
             badges.append("NEW")

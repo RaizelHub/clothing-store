@@ -5,6 +5,8 @@ function serializeQuery(q: ProductQuery): Record<string, string | number | boole
   const out: Record<string, string | number | boolean> = {};
   if (q.ids?.length) out.ids = q.ids.join(",");
   if (q.featured !== undefined) out.featured = q.featured;
+  if (q.new !== undefined) out.new = q.new;
+  if (q.in_stock !== undefined) out.in_stock = q.in_stock;
   if (q.category) out.category = q.category;
   if (q.collection) out.collection = q.collection;
   if (q.color !== undefined) out.color = q.color;

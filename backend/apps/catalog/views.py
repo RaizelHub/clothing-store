@@ -145,30 +145,50 @@ def product_list(request):
 
     if p.get("ids"):
         ids = [int(x) for x in p["ids"].split(",") if x.strip().isdigit()]
-        qs = qs.filter(id__in=ids)
+        if ids:
+            qs = qs.filter(id__in=ids)
 
     cat_slug = p.get("category")
     if cat_slug:
         cat = Category.objects.filter(slug=cat_slug).first()
+        if not cat and cat_slug.isdigit():
+            cat = Category.objects.filter(id=int(cat_slug)).first()
         if cat:
-            children = list(Category.objects.filter(parent=cat).values_list("id", flat=True))
-            qs = qs.filter(category_id__in=[cat.id, *children])
+            to_visit = [cat.id]
+            descendant_ids = [cat.id]
+            while to_visit:
+                curr_id = to_visit.pop(0)
+                child_ids = list(Category.objects.filter(parent_id=curr_id).values_list("id", flat=True))
+                descendant_ids.extend(child_ids)
+                to_visit.extend(child_ids)
+            qs = qs.filter(category_id__in=descendant_ids)
 
     if p.get("collection"):
         qs = qs.filter(collections__slug=p["collection"])
 
     if p.get("color"):
         ids = [int(x) for x in p["color"].split(",") if x.strip().isdigit()]
-        qs = qs.filter(variants__color_id__in=ids)
+        if ids:
+            qs = qs.filter(variants__color_id__in=ids)
 
     if p.get("size"):
         ids = [int(x) for x in p["size"].split(",") if x.strip().isdigit()]
-        qs = qs.filter(variants__size_id__in=ids)
+        if ids:
+            qs = qs.filter(variants__size_id__in=ids)
 
     if p.get("min_price"):
-        qs = qs.filter(min_variant_price__gte=Decimal(p["min_price"]))
+        try:
+            qs = qs.filter(min_variant_price__gte=Decimal(p["min_price"]))
+        except Exception:
+            pass
     if p.get("max_price"):
-        qs = qs.filter(min_variant_price__lte=Decimal(p["max_price"]))
+        try:
+            qs = qs.filter(min_variant_price__lte=Decimal(p["max_price"]))
+        except Exception:
+            pass
+
+    if p.get("in_stock") in ("true", "1"):
+        qs = qs.filter(variants__stock__gt=0)
 
     if p.get("new") == "true" or p.get("new") == "1":
         qs = qs.filter(Q(is_new=True) | Q(created_at__gte=timezone.now() - timedelta(days=30)))
@@ -177,7 +197,15 @@ def product_list(request):
 
     q = p.get("q")
     if q:
-        qs = qs.filter(Q(name__icontains=q) | Q(tagline__icontains=q) | Q(description__icontains=q))
+        q_term = q.strip()
+        qs = qs.filter(
+            Q(name__icontains=q_term)
+            | Q(tagline__icontains=q_term)
+            | Q(description__icontains=q_term)
+            | Q(category__name__icontains=q_term)
+            | Q(category__slug__icontains=q_term)
+            | Q(variants__color__name__icontains=q_term)
+        )
 
     sort = p.get("sort", "featured")
     ordering = {

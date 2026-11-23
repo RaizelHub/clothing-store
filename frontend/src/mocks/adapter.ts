@@ -140,10 +140,15 @@ function isNew(p: DBProduct): boolean {
 function productSummary(db: DBState, p: DBProduct): ProductSummary {
   const sale = p.sale_price_cents !== null;
   const selling = unitsSold(db, p.id) > 0;
+  const inStock = p.variants.some((v) => v.stock > 0);
   const badges: ProductSummary["badges"] = [];
-  if (isNew(p)) badges.push("NEW");
-  if (sale) badges.push("SALE");
-  if (selling) badges.push("BESTSELLER");
+  if (!inStock) {
+    badges.push("SOLD OUT");
+  } else {
+    if (isNew(p)) badges.push("NEW");
+    if (sale) badges.push("SALE");
+    if (selling) badges.push("BESTSELLER");
+  }
   return {
     id: p.id,
     name: p.name,
@@ -157,6 +162,7 @@ function productSummary(db: DBState, p: DBProduct): ProductSummary {
     category_slug: db.categories.find((c) => c.id === p.category_id)?.slug ?? "",
     is_featured: p.is_featured,
     is_new: isNew(p),
+    in_stock: inStock,
     images: [...p.images].sort((a, b) => a.position - b.position),
     colors: db.colors.filter((c) => p.colors.includes(c.id)),
     sizes: db.sizes.filter((s) => p.variants.some((v) => v.size_id === s.id)),
@@ -461,15 +467,26 @@ function queryProducts(db: DBState, q: URLSearchParams): Paginated<ProductSummar
       return true;
     });
   }
+  if (q.get("in_stock") === "true" || q.get("in_stock") === "1") {
+    list = list.filter((p) => p.variants.some((v) => v.stock > 0));
+  }
   const text = q.get("q");
   if (text) {
-    const needle = text.toLowerCase();
-    list = list.filter(
-      (p) =>
+    const needle = text.toLowerCase().trim();
+    list = list.filter((p) => {
+      const cat = db.categories.find((c) => c.id === p.category_id);
+      const catName = cat?.name.toLowerCase() ?? "";
+      const catSlug = cat?.slug.toLowerCase() ?? "";
+      const colorNames = db.colors.filter((c) => p.colors.includes(c.id)).map((c) => c.name.toLowerCase());
+      return (
         p.name.toLowerCase().includes(needle) ||
         p.tagline.toLowerCase().includes(needle) ||
-        p.description.toLowerCase().includes(needle)
-    );
+        p.description.toLowerCase().includes(needle) ||
+        catName.includes(needle) ||
+        catSlug.includes(needle) ||
+        colorNames.some((c) => c.includes(needle))
+      );
+    });
   }
   if (q.get("new")) list = list.filter((p) => isNew(p));
   if (q.get("featured")) list = list.filter((p) => p.is_featured);
