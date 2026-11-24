@@ -58,6 +58,10 @@ export function ProductCard({ product }: { product: ProductSummary }) {
     staleTime: 5 * 60 * 1000,
   });
 
+  const productUrl = activeColorId
+    ? `/products/${product.slug}?color=${activeColorId}`
+    : `/products/${product.slug}`;
+
   const { primary: image, hover: hoverImage } = getProductCardImages(
     product.images,
     activeColorId,
@@ -102,7 +106,7 @@ export function ProductCard({ product }: { product: ProductSummary }) {
       {/* Product Imagery Container */}
       <div className="product-image relative aspect-[4/5] overflow-hidden bg-stone-100 border border-stone-200/70 transition-all duration-500 ease-editorial group-hover:border-stone-400">
         <Link
-          to={`/products/${product.slug}`}
+          to={productUrl}
           className="block size-full relative"
         >
           {image && !imgFailed ? (
@@ -294,7 +298,7 @@ export function ProductCard({ product }: { product: ProductSummary }) {
         <div className="product-meta flex items-baseline justify-between gap-2">
           <h3 className="text-xs font-normal text-ink line-clamp-1">
             <Link
-              to={`/products/${product.slug}`}
+              to={productUrl}
               className="transition-colors hover:text-stone-600"
             >
               {product.name}

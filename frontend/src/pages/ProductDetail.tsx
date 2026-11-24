@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Ruler, Heart, Truck, RefreshCw } from "lucide-react";
 import { getProduct, getProducts, submitReview } from "@/api/products";
@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 
 export function ProductDetailPage() {
   const { slug = "" } = useParams();
+  const [searchParams] = useSearchParams();
   const { data: product, isLoading, isError } = useQuery({
     queryKey: ["products", slug],
     queryFn: () => getProduct(slug),
@@ -42,11 +43,13 @@ export function ProductDetailPage() {
   useEffect(() => {
     if (!product) return;
     trackRecentlyViewed(product);
-    setColorId(product.colors[0]?.id ?? null);
+    const colorQuery = searchParams.get("color");
+    const matchingColor = colorQuery ? product.colors.find((c) => String(c.id) === colorQuery) : null;
+    setColorId(matchingColor ? matchingColor.id : (product.colors[0]?.id ?? null));
     setSizeId(null);
     setQty(1);
     setAddNotice(null);
-  }, [product?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [product?.id, searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Structured data for SEO
   useEffect(() => {

@@ -23,9 +23,9 @@ export interface PriceRange {
 export const PRICE_RANGES: PriceRange[] = [
   { label: "All Prices" },
   { label: "Under ₱100", max: 100 },
-  { label: "₱100 – ₱250", min: 100, max: 250 },
-  { label: "₱250 – ₱500", min: 250, max: 500 },
-  { label: "Over ₱500", min: 500 },
+  { label: "₱100 – ₱200", min: 100, max: 200 },
+  { label: "₱200 – ₱350", min: 200, max: 350 },
+  { label: "Over ₱350", min: 350 },
 ];
 
 export function SortSelect({ value, onChange }: { value: SortOption; onChange: (v: SortOption) => void }) {
@@ -156,20 +156,22 @@ export function ProductFilters({
       </section>
 
       {/* New Arrivals filter */}
-      <section className="space-y-2.5">
-        <h3 className="text-[10.5px] font-medium uppercase tracking-widest text-stone-600">
-          Collections
-        </h3>
-        <label className="flex items-center gap-2.5 cursor-pointer text-xs text-ink hover:text-stone-600 transition-colors">
-          <input
-            type="checkbox"
-            checked={Boolean(value.newOnly)}
-            onChange={(e) => onChange({ ...value, newOnly: e.target.checked })}
-            className="rounded-none border-stone-300 text-ink focus:ring-0 cursor-pointer size-3.5"
-          />
-          <span className="text-[11.5px] uppercase tracking-wider">New Arrivals</span>
-        </label>
-      </section>
+      {value.newOnly !== undefined && (
+        <section className="space-y-2.5">
+          <h3 className="text-[10.5px] font-medium uppercase tracking-widest text-stone-600">
+            Collections
+          </h3>
+          <label className="flex items-center gap-2.5 cursor-pointer text-xs text-ink hover:text-stone-600 transition-colors">
+            <input
+              type="checkbox"
+              checked={Boolean(value.newOnly)}
+              onChange={(e) => onChange({ ...value, newOnly: e.target.checked })}
+              className="rounded-none border-stone-300 text-ink focus:ring-0 cursor-pointer size-3.5"
+            />
+            <span className="text-[11.5px] uppercase tracking-wider">New Arrivals</span>
+          </label>
+        </section>
+      )}
 
       {/* Categories (when present) */}
       {categories.length > 0 && (
