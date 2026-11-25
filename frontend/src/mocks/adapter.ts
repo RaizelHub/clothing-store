@@ -541,6 +541,14 @@ function buildOrder(
   const items = raw.map((r) => joinCartItem(db, r)).filter((i): i is CartItem => i !== null);
   if (!items.length) fail(400, { detail: "Cart is empty." });
 
+  for (const item of items) {
+    const v = db.products.flatMap((p) => p.variants).find((vv) => vv.id === item.variant.id);
+    if (!v) fail(400, { detail: "Variant is no longer available." });
+    if (v.stock < item.quantity) {
+      fail(400, { stock: [`Only ${v.stock} available for ${v.sku}.`] });
+    }
+  }
+
   const subtotalC = items.reduce((s, i) => s + Math.round(parseFloat(i.unit_price) * 100) * i.quantity, 0);
   const coupon = validateCoupon(db, body.coupon_code, subtotalC);
   if (body.coupon_code && (!coupon || !coupon.valid)) {
@@ -998,7 +1006,12 @@ const routes: MockRoute[] = [
 
       for (const it of items) {
         const qty = Math.max(1, Number(it.quantity ?? 1));
+        const v = db.products.flatMap((p) => p.variants).find((vv) => vv.id === it.variant_id);
         const existing = cartItems.find((ci) => ci.variant_id === it.variant_id);
+        const curQty = existing ? existing.quantity : 0;
+        if (v && curQty + qty > v.stock) {
+          fail(400, { stock: [`'${v.sku}' has ${v.stock} available (${curQty} already in bag).`] });
+        }
         if (existing) {
           existing.quantity += qty;
         } else {
@@ -1095,14 +1108,25 @@ const routes: MockRoute[] = [
     handler: ({ db, me, body, headers }) => {
       const v = db.products.flatMap((p) => p.variants).find((vv) => vv.id === Number(body.variant_id));
       if (!v) fail(400, errField("variant_id", "Variant not found."));
-      if (v.stock <= 0) fail(400, errField("variant_id", "This size is out of stock."));
+      if (v.stock <= 0) fail(400, errField("variant_id", "This size is currently out of stock."));
+      const qty = Number(body.quantity ?? 1);
+      if (isNaN(qty) || qty < 1) fail(400, errField("quantity", "Quantity must be a positive integer."));
       const key = String(ownerKey(me, headers));
       const cart = db.carts[key] ?? [];
       const existing = cart.find((i) => i.variant_id === v.id);
+      const currentQty = existing ? existing.quantity : 0;
+      if (currentQty + qty > v.stock) {
+        const availableMore = Math.max(0, v.stock - currentQty);
+        if (availableMore === 0) {
+          fail(400, errField("quantity", `You already have the maximum available quantity (${v.stock}) in your bag.`));
+        } else {
+          fail(400, errField("quantity", `Only ${v.stock} available in this size. You can add at most ${availableMore} more.`));
+        }
+      }
       if (existing) {
-        existing.quantity = Math.min(existing.quantity + Number(body.quantity ?? 1), v.stock);
+        existing.quantity += qty;
       } else {
-        cart.push({ id: nextId(db.seq, "cartItem"), variant_id: v.id, quantity: Math.min(Number(body.quantity ?? 1), v.stock) });
+        cart.push({ id: nextId(db.seq, "cartItem"), variant_id: v.id, quantity: qty });
       }
       db.carts[key] = cart;
       saveDB();
@@ -1117,14 +1141,19 @@ const routes: MockRoute[] = [
       const raw = db.carts[key] ?? [];
       const item = raw.find((i) => i.id === Number(m[1]));
       if (!item) fail(404, { detail: "Not found." });
-      const v = db.products.flatMap((p) => p.variants).find((vv) => vv.id === item.variant_id)!;
-      let qty = Number(body.quantity ?? 1);
-      if (qty < 1) {
-        db.carts[key] = raw.filter((i) => i.id !== item.id);
-      } else {
-        qty = Math.min(qty, v.stock);
-        item.quantity = qty;
+      const v = db.products.flatMap((p) => p.variants).find((vv) => vv.id === item.variant_id);
+      if (!v) fail(400, { detail: "Variant not found." });
+      const qty = Number(body.quantity);
+      if (isNaN(qty) || qty < 1) {
+        fail(400, errField("quantity", "Quantity must be a positive integer of at least 1."));
       }
+      if (qty > v.stock) {
+        if (v.stock <= 0) {
+          fail(400, errField("quantity", "This piece is now out of stock."));
+        }
+        fail(400, errField("quantity", `Only ${v.stock} available for ${v.sku}.`));
+      }
+      item.quantity = qty;
       db.carts[key] = db.carts[key] ?? raw;
       saveDB();
       return ok(200, { cart: getCart(db, me, headers), item: joinCartItem(db, item) });

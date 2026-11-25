@@ -5,6 +5,7 @@ import { cancelOrder, getMyOrder } from "@/api/orders";
 import { OrderStatusBadge } from "@/components/ui/OrderStatusBadge";
 import { Button } from "@/components/ui/Button";
 import { Notice, Skeleton } from "@/components/ui/misc";
+import { ErrorState } from "@/components/ui/StateViews";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { getApiErrorMessage } from "@/lib/errors";
 import { useState } from "react";
@@ -15,7 +16,7 @@ export function OrderDetailPage() {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const { data: order, isLoading, isError } = useQuery({
+  const { data: order, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["orders", orderNumber],
     queryFn: () => getMyOrder(orderNumber),
     enabled: Boolean(orderNumber),
@@ -42,12 +43,13 @@ export function OrderDetailPage() {
 
   if (isError || !order) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-xs text-stone-500">Order not found or access restricted.</p>
-        <Link to="/account/orders" className="mt-4 inline-flex items-center gap-1 text-xs uppercase tracking-widest text-ink hover:underline">
-          <ArrowLeft size={12} /> Return to Orders
-        </Link>
-      </div>
+      <ErrorState
+        title="Order details unavailable"
+        message="We were unable to load the details for this order. It may have expired or is temporarily inaccessible."
+        onRetry={() => refetch()}
+        isRetrying={isFetching}
+        secondaryAction={{ label: "Return to Orders", href: "/account/orders" }}
+      />
     );
   }
 

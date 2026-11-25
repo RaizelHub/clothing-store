@@ -1006,11 +1006,16 @@ def outfit_add_to_cart(request, slug):
         for v in ProductVariant.objects.select_related("product", "size", "color").filter(id__in=variant_ids)
     }
 
+    cart = _cart(request)
+    existing_by_variant = {item.variant_id: item.quantity for item in cart.items.all()}
+
     # Validate stock and product association
     for it in submitted_items:
         p_id = it["product_id"]
         v_id = it["variant_id"]
         qty = it.get("quantity", 1)
+        if qty <= 0:
+            raise ValidationError({"items": ["Quantity must be a positive integer."]})
 
         if p_id not in outfit_product_ids:
             raise ValidationError({"items": [f"Product ID {p_id} is not part of this look."]})
@@ -1019,15 +1024,19 @@ def outfit_add_to_cart(request, slug):
         if not v or v.product_id != p_id:
             raise ValidationError({"items": [f"Selected variant {v_id} does not belong to product {p_id}."]})
 
-        if v.stock < qty:
+        cur_qty = existing_by_variant.get(v.id, 0)
+        if cur_qty + qty > v.stock:
             raise ValidationError({
-                "stock": [f"'{v.product.name}' ({v.color.name} / {v.size.name}) is out of stock ({v.stock} available)."],
+                "stock": [
+                    f"'{v.product.name}' ({v.color.name} / {v.size.name}) has {v.stock} available"
+                    + (f" ({cur_qty} already in your bag)" if cur_qty > 0 else "")
+                    + "."
+                ],
                 "unavailable_variant_id": v.id,
             })
 
     # Atomic cart update
     with transaction.atomic():
-        cart = _cart(request)
         for it in submitted_items:
             v = variants_by_id[it["variant_id"]]
             qty = it.get("quantity", 1)
@@ -1035,7 +1044,7 @@ def outfit_add_to_cart(request, slug):
                 cart=cart, variant=v, defaults={"quantity": qty}
             )
             if not created:
-                cart_item.quantity = min(cart_item.quantity + qty, v.stock)
+                cart_item.quantity = cart_item.quantity + qty
                 cart_item.save(update_fields=["quantity"])
 
     # Calculate bundle discount

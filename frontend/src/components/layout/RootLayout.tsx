@@ -8,8 +8,14 @@ import { CartDrawer } from "@/components/cart/CartDrawer";
 
 function RouteLoadingFallback() {
   return (
-    <div className="flex min-h-[40vh] items-center justify-center">
-      <div className="h-6 w-6 animate-spin rounded-full border-2 border-stone-300 border-t-ink" />
+    <div className="container-editorial py-16 animate-pulse space-y-8 min-h-[50vh]">
+      <div className="h-4 w-32 bg-stone-200/80" />
+      <div className="h-10 w-64 bg-stone-200/80" />
+      <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="aspect-[4/5] bg-stone-200/60" />
+        ))}
+      </div>
     </div>
   );
 }

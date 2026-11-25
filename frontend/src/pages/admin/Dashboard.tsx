@@ -2,11 +2,12 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getStats } from "@/api/admin";
 import { OrderStatusBadge } from "@/components/ui/OrderStatusBadge";
+import { ErrorState } from "@/components/ui/StateViews";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export function Dashboard() {
-  const { data: stats, isLoading } = useQuery({ queryKey: ["admin", "stats"], queryFn: getStats });
+  const { data: stats, isLoading, isError, refetch, isFetching } = useQuery({ queryKey: ["admin", "stats"], queryFn: getStats });
 
   if (isLoading) {
     return (
@@ -18,7 +19,16 @@ export function Dashboard() {
     );
   }
 
-  if (!stats) return <p className="text-sm text-accent">Couldn't load dashboard.</p>;
+  if (isError || !stats) {
+    return (
+      <ErrorState
+        title="Dashboard metrics unavailable"
+        message="Unable to load administrative statistics and sales analytics. Please check your connection."
+        onRetry={() => refetch()}
+        isRetrying={isFetching}
+      />
+    );
+  }
 
   return (
     <div className="space-y-10">

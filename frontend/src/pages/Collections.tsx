@@ -3,10 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { getCollection, getCollections } from "@/api/products";
 import { ProductGrid } from "@/components/product/ProductGrid";
+import { ErrorState } from "@/components/ui/StateViews";
 import { placeholderImage } from "@/lib/format";
 
 export function Collections() {
-  const { data: collections, isLoading } = useQuery({ queryKey: ["collections"], queryFn: getCollections });
+  const { data: collections, isLoading, isError, refetch, isFetching } = useQuery({ queryKey: ["collections"], queryFn: getCollections });
 
   return (
     <section className="container-editorial py-12 sm:py-16">
@@ -20,7 +21,14 @@ export function Collections() {
         </p>
       </header>
 
-      {isLoading ? (
+      {isError ? (
+        <ErrorState
+          title="Capsules unavailable"
+          message="We could not load our seasonal capsules. Please check your network connection and try again."
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+        />
+      ) : isLoading ? (
         <div className="grid gap-8 md:grid-cols-2">
           {[0, 1].map((i) => (
             <div key={i} className="aspect-[16/10] animate-pulse bg-stone-200/80" />
@@ -66,7 +74,7 @@ export function Collections() {
 
 export function CollectionPage() {
   const { slug = "" } = useParams();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["collections", slug],
     queryFn: () => getCollection(slug),
     enabled: Boolean(slug),
@@ -85,16 +93,16 @@ export function CollectionPage() {
     );
   }
 
-  if (!data) {
+  if (isError || !data) {
     return (
-      <section className="container-editorial py-24 text-center">
-        <h1 className="font-display text-3xl text-ink">Collection not found</h1>
-        <Link
-          to="/collections"
-          className="mt-4 inline-flex items-center gap-2 text-xs uppercase tracking-widest text-ink underline underline-offset-4"
-        >
-          <ArrowLeft size={14} /> Return to all capsules
-        </Link>
+      <section className="container-editorial py-20">
+        <ErrorState
+          title="Collection unavailable"
+          message="This capsule may have concluded its release run or an unexpected connection error occurred."
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+          secondaryAction={{ label: "Return to all capsules", href: "/collections" }}
+        />
       </section>
     );
   }

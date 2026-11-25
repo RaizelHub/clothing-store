@@ -4,10 +4,11 @@ import { useSession } from "@/hooks/auth";
 import { useWishlist, useWishlistActions } from "@/hooks/useWishlist";
 import { ProductGrid } from "@/components/product/ProductGrid";
 import { Button } from "@/components/ui/Button";
+import { ErrorState } from "@/components/ui/StateViews";
 
 export function WishlistPage() {
   const { data: me } = useSession();
-  const { data: wishlist, isLoading } = useWishlist();
+  const { data: wishlist, isLoading, isError, refetch, isFetching } = useWishlist();
   const { remove } = useWishlistActions();
 
   return (
@@ -37,6 +38,14 @@ export function WishlistPage() {
 
       {isLoading ? (
         <ProductGrid products={[]} loading />
+      ) : isError ? (
+        <ErrorState
+          title="Wishlist unavailable"
+          message="We were unable to load your saved pieces. Please check your network connection and try again."
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+          secondaryAction={{ label: "Discover New Arrivals", href: "/new" }}
+        />
       ) : wishlist && wishlist.length > 0 ? (
         <ProductGrid products={wishlist.map((w) => w.product)} />
       ) : (

@@ -6,6 +6,7 @@ import type { ProductSummary } from "@/types/api";
 import { getProduct } from "@/api/products";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
+import { getApiErrorMessage } from "@/lib/errors";
 import { getImageSrcSet, getImageUrl, getProductCardImages } from "@/lib/images";
 import { useWishlist, useWishlistActions } from "@/hooks/useWishlist";
 import { useAddToCart } from "@/hooks/useCart";
@@ -40,6 +41,7 @@ export function ProductCard({ product }: { product: ProductSummary }) {
 
   const [activeColorId, setActiveColorId] = useState<number | null>(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddError, setQuickAddError] = useState<string | null>(null);
   const quickAddRef = useRef<HTMLButtonElement>(null);
   const closeSizeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -86,16 +88,19 @@ export function ProductCard({ product }: { product: ProductSummary }) {
     if (!variant || variant.stock === 0) return;
 
     setAddingSizeId(sizeId);
+    setQuickAddError(null);
     addToCart.mutate(
       { variant_id: variant.id, quantity: 1 },
       {
         onSuccess: () => {
           setAddingSizeId(null);
           setQuickAddOpen(false);
+          setQuickAddError(null);
           openCartDrawer();
         },
-        onError: () => {
+        onError: (e) => {
           setAddingSizeId(null);
+          setQuickAddError(getApiErrorMessage(e));
         },
       },
     );
@@ -286,6 +291,11 @@ export function ProductCard({ product }: { product: ProductSummary }) {
                       );
                     })}
                   </div>
+                )}
+                {quickAddError && (
+                  <p className="mt-2 text-[10px] text-accent leading-tight">
+                    {quickAddError}
+                  </p>
                 )}
               </div>
             </div>

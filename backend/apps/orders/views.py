@@ -134,21 +134,45 @@ def cart_view(request):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def cart_add_item(request):
-    variant = ProductVariant.objects.filter(pk=request.data.get("variant_id")).first()
+    variant_id = request.data.get("variant_id")
+    if not variant_id:
+        raise ValidationError({"variant_id": ["Variant ID is required."]})
+    variant = ProductVariant.objects.filter(pk=variant_id).first()
     if not variant:
         raise ValidationError({"variant_id": ["Variant not found."]})
     if variant.stock <= 0:
-        raise ValidationError({"variant_id": ["This size is out of stock."]})
+        raise ValidationError({"variant_id": ["This size is currently out of stock."]})
+
+    raw_qty = request.data.get("quantity", 1)
     try:
-        quantity = int(request.data.get("quantity", 1))
+        quantity = int(raw_qty)
+        if quantity <= 0:
+            raise ValueError()
     except (TypeError, ValueError):
-        quantity = 1
-    quantity = max(1, quantity)
+        raise ValidationError({"quantity": ["Quantity must be a positive integer."]})
+
     cart = _cart(request)
-    item, created = CartItem.objects.get_or_create(cart=cart, variant=variant, defaults={"quantity": quantity})
-    if not created:
-        item.quantity = min(item.quantity + quantity, variant.stock)
+    item = cart.items.filter(variant=variant).first()
+    current_qty = item.quantity if item else 0
+    new_total_qty = current_qty + quantity
+
+    if new_total_qty > variant.stock:
+        available_more = max(0, variant.stock - current_qty)
+        if available_more == 0:
+            raise ValidationError({
+                "quantity": [f"You already have the maximum available quantity ({variant.stock}) in your bag."]
+            })
+        else:
+            raise ValidationError({
+                "quantity": [f"Only {variant.stock} available in this size. You can add at most {available_more} more."]
+            })
+
+    if item:
+        item.quantity = new_total_qty
         item.save(update_fields=["quantity"])
+    else:
+        CartItem.objects.create(cart=cart, variant=variant, quantity=quantity)
+
     return Response(_cart_data(cart), status=status.HTTP_201_CREATED)
 
 
@@ -156,20 +180,31 @@ def cart_add_item(request):
 @permission_classes([AllowAny])
 def cart_item_detail(request, pk):
     cart = _cart(request)
-    item = cart.items.filter(pk=pk).first()
+    item = cart.items.select_related("variant__product").filter(pk=pk).first()
     if not item:
-        raise NotFound("Not found.")
+        raise NotFound("Cart item not found.")
     if request.method == "DELETE":
         item.delete()
         return Response(_cart_data(cart))
+
+    raw_qty = request.data.get("quantity")
     try:
-        quantity = int(request.data.get("quantity", 1))
+        quantity = int(raw_qty)
+        if quantity < 1:
+            raise ValueError()
     except (TypeError, ValueError):
-        quantity = 1
-    if quantity < 1:
-        item.delete()
-        return Response(_cart_data(cart))
-    item.quantity = min(quantity, item.variant.stock)
+        raise ValidationError({"quantity": ["Quantity must be a positive integer of at least 1."]})
+
+    if quantity > item.variant.stock:
+        if item.variant.stock <= 0:
+            raise ValidationError({
+                "quantity": [f"'{item.variant.product.name}' is now out of stock."]
+            })
+        raise ValidationError({
+            "quantity": [f"Only {item.variant.stock} available for {item.variant.sku}."]
+        })
+
+    item.quantity = quantity
     item.save(update_fields=["quantity"])
     return Response({"cart": _cart_data(cart), "item": CartItemSerializer(item).data})
 
@@ -184,13 +219,15 @@ def cart_merge(request):
         guest = Cart.objects.filter(owner_key="guest").first()
     mine, _ = Cart.objects.get_or_create(user=user)
     if guest:
-        for g in guest.items.all():
+        for g in guest.items.select_related("variant").all():
             existing = mine.items.filter(variant=g.variant).first()
             if existing:
-                existing.quantity = min(existing.quantity + g.quantity, 99)
+                existing.quantity = min(existing.quantity + g.quantity, g.variant.stock)
                 existing.save(update_fields=["quantity"])
             else:
-                mine.items.add(g)
+                merged_qty = min(g.quantity, g.variant.stock)
+                if merged_qty > 0:
+                    CartItem.objects.create(cart=mine, variant=g.variant, quantity=merged_qty)
         guest.items.all().delete()
         guest.delete()
     return Response(_cart_data(mine))

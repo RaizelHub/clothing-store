@@ -4,10 +4,11 @@ import { ArrowRight, Package } from "lucide-react";
 import { getMyOrders } from "@/api/orders";
 import { OrderStatusBadge } from "@/components/ui/OrderStatusBadge";
 import { Skeleton } from "@/components/ui/misc";
+import { ErrorState } from "@/components/ui/StateViews";
 import { formatDate, formatMoney } from "@/lib/format";
 
 export function OrdersPage() {
-  const { data: orders, isLoading, isError } = useQuery({ queryKey: ["orders"], queryFn: getMyOrders });
+  const { data: orders, isLoading, isError, refetch, isFetching } = useQuery({ queryKey: ["orders"], queryFn: getMyOrders });
 
   if (isLoading) {
     return (
@@ -20,7 +21,14 @@ export function OrdersPage() {
   }
 
   if (isError) {
-    return <p className="text-xs text-accent">Unable to retrieve order history.</p>;
+    return (
+      <ErrorState
+        title="Order history unavailable"
+        message="Unable to retrieve your order history. Please check your connection."
+        onRetry={() => refetch()}
+        isRetrying={isFetching}
+      />
+    );
   }
 
   if (!orders || orders.length === 0) {

@@ -12,6 +12,7 @@ import { validateCoupon } from "@/api/cart";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Checkbox } from "@/components/ui/fields";
 import { EmptyState, Notice, QuantityStepper, Skeleton } from "@/components/ui/misc";
+import { ErrorState } from "@/components/ui/StateViews";
 import { formatMoney } from "@/lib/format";
 import { getApiErrorMessage } from "@/lib/errors";
 import { cn } from "@/lib/utils";
@@ -22,7 +23,7 @@ type Step = "contact" | "payment";
 
 export function CheckoutPage() {
   const navigate = useNavigate();
-  const { data: cart, isLoading } = useCart();
+  const { data: cart, isLoading, isError, refetch: refetchCart, isFetching: isFetchingCart } = useCart();
   const { data: quote } = useShippingQuote();
   const { data: me } = useSession();
   const updateItem = useUpdateCartItem();
@@ -141,6 +142,20 @@ export function CheckoutPage() {
     );
   }
 
+  if (isError) {
+    return (
+      <section className="container-editorial py-20">
+        <ErrorState
+          title="Checkout unavailable"
+          message="Unable to retrieve your shopping bag for checkout. Please check your network connection and try again."
+          onRetry={() => refetchCart()}
+          isRetrying={isFetchingCart}
+          secondaryAction={{ label: "Return to Store", href: "/new" }}
+        />
+      </section>
+    );
+  }
+
   if (!cart?.items.length) {
     return (
       <section className="container-editorial py-24">
@@ -158,10 +173,23 @@ export function CheckoutPage() {
   }
 
   const contactComplete = Boolean(me) || guestEmailValid;
+  const stockErrors = useMemo(
+    () => cart?.items.filter((i) => i.available_stock <= 0 || i.quantity > i.available_stock) ?? [],
+    [cart?.items]
+  );
+  const hasStockErrors = stockErrors.length > 0;
 
   return (
     <section className="container-editorial py-10 md:py-14">
       <h1 className="font-display text-4xl">Checkout</h1>
+
+      {hasStockErrors && (
+        <div className="mt-6 mb-2">
+          <Notice tone="error">
+            One or more pieces in your bag exceed available inventory or are sold out. Please adjust quantities to proceed with checkout.
+          </Notice>
+        </div>
+      )}
 
       <div className="mt-10 grid gap-12 lg:grid-cols-[1fr_400px]">
         <div className="min-w-0 space-y-10">
@@ -445,7 +473,12 @@ export function CheckoutPage() {
                 <Button
                   size="lg"
                   loading={place.isPending}
+                  disabled={hasStockErrors}
                   onClick={() => {
+                    if (hasStockErrors) {
+                      setServerError("Please adjust out-of-stock items before placing your order.");
+                      return;
+                    }
                     if (paymentMethod === "mock") {
                       cardForm.trigger().then((valid) => {
                         if (!valid) return;
@@ -466,7 +499,11 @@ export function CheckoutPage() {
                     }
                   }}
                 >
-                  {paymentMethod === "paymongo" ? "Proceed to PayMongo" : "Place order"} · {formatMoney(totals.total)}
+                  {hasStockErrors
+                    ? "Adjust quantities to order"
+                    : paymentMethod === "paymongo"
+                    ? "Proceed to PayMongo"
+                    : `Place order · ${formatMoney(totals.total)}`}
                 </Button>
               </div>
             </form>
@@ -498,6 +535,15 @@ export function CheckoutPage() {
                       onChange={(q) => updateItem.mutate({ id: item.id, quantity: q })}
                     />
                   </div>
+                  {item.available_stock <= 0 ? (
+                    <p className="mt-1 text-[10px] uppercase tracking-wider font-mono text-accent font-medium">
+                      Sold out — remove to proceed
+                    </p>
+                  ) : item.quantity > item.available_stock ? (
+                    <p className="mt-1 text-[10px] uppercase tracking-wider font-mono text-accent font-medium">
+                      Only {item.available_stock} available
+                    </p>
+                  ) : null}
                 </div>
                 <span className="text-sm">{formatMoney(String(Number(item.unit_price) * item.quantity))}</span>
               </li>

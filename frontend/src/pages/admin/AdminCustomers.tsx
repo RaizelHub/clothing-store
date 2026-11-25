@@ -1,10 +1,11 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { listCustomers } from "@/api/admin";
+import { ErrorState, TableSkeleton } from "@/components/ui/StateViews";
 import { formatMoney, formatDate } from "@/lib/format";
 
 export function AdminCustomers() {
-  const { data: customers, isLoading } = useQuery({ queryKey: ["admin", "customers"], queryFn: listCustomers });
+  const { data: customers, isLoading, isError, refetch, isFetching } = useQuery({ queryKey: ["admin", "customers"], queryFn: listCustomers });
 
   return (
     <div className="space-y-6">
@@ -24,16 +25,27 @@ export function AdminCustomers() {
             </tr>
           </thead>
           <tbody>
-            {isLoading ? (
+            {isError ? (
               <tr>
-                <td colSpan={5} className="px-5 py-8 text-center text-stone-400">
-                  Loading…
+                <td colSpan={5} className="p-6">
+                  <ErrorState
+                    title="Customers unavailable"
+                    message="Unable to load customer directory."
+                    onRetry={() => refetch()}
+                    isRetrying={isFetching}
+                    compact
+                  />
                 </td>
               </tr>
+            ) : isLoading ? (
+              <TableSkeleton rows={5} cols={5} />
             ) : !customers || customers.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-5 py-8 text-center text-stone-400">
-                  No customers yet.
+                <td colSpan={5} className="px-5 py-12 text-center text-stone-400">
+                  <p className="text-sm font-medium text-stone-600">No customers registered</p>
+                  <p className="mt-1 text-xs text-stone-400">
+                    Customer records will appear here as users sign up and place orders.
+                  </p>
                 </td>
               </tr>
             ) : (

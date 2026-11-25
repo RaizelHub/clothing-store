@@ -6,6 +6,7 @@ import { deleteAdminProduct, listAdminProducts } from "@/api/admin";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/fields";
 import { Badge, Skeleton } from "@/components/ui/misc";
+import { ErrorState } from "@/components/ui/StateViews";
 import { formatMoney } from "@/lib/format";
 import { getImageUrl, getProductCardImages } from "@/lib/images";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -14,7 +15,7 @@ export function AdminProducts() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const q = useDebouncedValue(search, 300);
-  const { data: products, isLoading } = useQuery({
+  const { data: products, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["admin", "products", q],
     queryFn: () => listAdminProducts(q),
     placeholderData: (prev) => prev,
@@ -42,7 +43,26 @@ export function AdminProducts() {
         </div>
       </header>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {isError ? (
+        <ErrorState
+          title="Unable to load products"
+          message="Failed to retrieve catalogue products from the admin API."
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+        />
+      ) : products && products.length === 0 ? (
+        <div className="border border-dashed border-stone-200 py-16 text-center">
+          <p className="text-sm font-medium text-stone-600">
+            {q ? `No products match "${q}".` : "No products currently catalogued."}
+          </p>
+          <div className="mt-4">
+            <Button size="sm" onClick={() => navigate("/admin/products/new")}>
+              <Plus size={14} strokeWidth={1.5} /> Create product
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {isLoading && !products
           ? Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-72" />)
           : products?.map((p) => {
@@ -98,6 +118,7 @@ export function AdminProducts() {
               );
             })}
       </div>
+      )}
 
       {!isLoading && products && products.length === 0 && (
         <p className="py-16 text-center text-sm text-stone-400">

@@ -11,6 +11,7 @@ import {
 import { ActiveFiltersBar } from "@/components/product/ActiveFiltersBar";
 import { Drawer } from "@/components/ui/Drawer";
 import { Skeleton } from "@/components/ui/misc";
+import { ErrorState } from "@/components/ui/StateViews";
 import { useProductFilterParams, type FilterState } from "@/hooks/useProductFilterParams";
 
 interface ProductListingProps {
@@ -54,7 +55,7 @@ export function ProductListing({
 
   const queryKey = useMemo(() => ["products", queryParams], [queryParams]);
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey,
     queryFn: () => getProducts(queryParams),
     placeholderData: (prev) => prev,
@@ -226,9 +227,12 @@ export function ProductListing({
           </div>
 
           {isError ? (
-            <div className="py-16 text-center">
-              <p className="text-sm text-accent">Couldn't load products. Please try again.</p>
-            </div>
+            <ErrorState
+              title="Catalogue unavailable"
+              message="We were unable to load the product list. Please check your connection or try again."
+              onRetry={() => refetch()}
+              isRetrying={isFetching}
+            />
           ) : (
             <ProductGrid
               products={data?.results ?? []}

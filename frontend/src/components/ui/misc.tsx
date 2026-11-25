@@ -18,11 +18,29 @@ export function Skeleton({ className }: { className?: string }) {
   return <div className={cn("animate-pulse bg-stone-200", className)} />;
 }
 
-export function EmptyState({ title, body, action }: { title: string; body?: string; action?: ReactNode }) {
+export function EmptyState({
+  title,
+  body,
+  action,
+  icon,
+  className,
+}: {
+  title: string;
+  body?: string;
+  action?: ReactNode;
+  icon?: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="flex flex-col items-center justify-center border border-dashed border-stone-300 px-6 py-20 text-center">
-      <h3 className="font-display text-xl">{title}</h3>
-      {body && <p className="mt-2 max-w-sm text-sm text-stone-500">{body}</p>}
+    <div
+      className={cn(
+        "flex flex-col items-center justify-center border border-dashed border-stone-300 px-6 py-16 text-center",
+        className
+      )}
+    >
+      {icon && <div className="mb-4 text-stone-400">{icon}</div>}
+      <h3 className="font-display text-xl sm:text-2xl text-ink">{title}</h3>
+      {body && <p className="mt-2 max-w-sm text-xs sm:text-sm text-stone-500 leading-relaxed">{body}</p>}
       {action && <div className="mt-6">{action}</div>}
     </div>
   );

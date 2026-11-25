@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, EyeOff, Trash2 } from "lucide-react";
 import { deleteReview, listAdminReviews, setReviewStatus } from "@/api/admin";
-import { Stars } from "@/components/ui/misc";
+import { Stars, Skeleton } from "@/components/ui/misc";
+import { ErrorState } from "@/components/ui/StateViews";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
 import type { ReviewStatus as Status } from "@/types/api";
@@ -18,7 +19,7 @@ const TABS: { key: Status | "all"; label: string }[] = [
 export function AdminReviews() {
   const [tab, setTab] = useState<Status | "all">("pending");
   const queryClient = useQueryClient();
-  const { data: reviews, isLoading } = useQuery({ queryKey: ["admin", "reviews", tab], queryFn: () => listAdminReviews(tab) });
+  const { data: reviews, isLoading, isError, refetch, isFetching } = useQuery({ queryKey: ["admin", "reviews", tab], queryFn: () => listAdminReviews(tab) });
 
   const setStatus = useMutation({
     mutationFn: ({ id, status }: { id: number; status: Status }) => setReviewStatus(id, status),
@@ -53,10 +54,26 @@ export function AdminReviews() {
       </div>
 
       <div className="space-y-3">
-        {isLoading ? (
-          <p className="py-10 text-center text-sm text-stone-400">Loading…</p>
+        {isError ? (
+          <ErrorState
+            title="Reviews unavailable"
+            message="Unable to load reviews for moderation."
+            onRetry={() => refetch()}
+            isRetrying={isFetching}
+          />
+        ) : isLoading ? (
+          <div className="space-y-3">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-32" />
+            ))}
+          </div>
         ) : !reviews || reviews.length === 0 ? (
-          <p className="py-10 text-center text-sm text-stone-400">Nothing {tab === "all" ? "" : `${tab} `}here.</p>
+          <div className="border border-dashed border-stone-200 py-12 text-center">
+            <p className="text-sm font-medium text-stone-600">No {tab === "all" ? "" : `${tab} `}reviews</p>
+            <p className="mt-1 text-xs text-stone-400">
+              Customer submissions will be queued here for moderation.
+            </p>
+          </div>
         ) : (
           reviews.map((r) => (
             <article key={r.id} className="border border-stone-200 p-5">

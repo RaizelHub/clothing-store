@@ -51,10 +51,12 @@ const AdminLooks = lazy(() => import("@/pages/admin/AdminLooks").then((m) => ({ 
 const OutfitEditor = lazy(() => import("@/pages/admin/OutfitEditor").then((m) => ({ default: m.OutfitEditor })));
 
 import { RequireAuth, RequireGuest, RequireAdmin } from "@/routes/guards";
+import { RootErrorBoundary } from "@/components/ui/RootErrorBoundary";
 
 export const router = createBrowserRouter([
   {
     element: <RootLayout />,
+    errorElement: <RootErrorBoundary />,
     children: [
       { path: "/", element: <Home /> },
       { path: "/new", element: <NewArrivals /> },

@@ -2,6 +2,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { listAdminOrders } from "@/api/admin";
 import { OrderStatusBadge } from "@/components/ui/OrderStatusBadge";
+import { ErrorState, TableSkeleton } from "@/components/ui/StateViews";
 import { formatMoney } from "@/lib/format";
 import type { OrderStatus } from "@/types/api";
 import { ORDER_STATUSES } from "@/types/api";
@@ -13,7 +14,7 @@ export function AdminOrders() {
   const [params, setParams] = useSearchParams();
   const status = (params.get("status") as OrderStatus | "all") ?? "all";
 
-  const { data: orders, isLoading } = useQuery({
+  const { data: orders, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["admin", "orders", status],
     queryFn: () => listAdminOrders(status),
   });
@@ -52,16 +53,27 @@ export function AdminOrders() {
             </tr>
           </thead>
           <tbody>
-            {isLoading ? (
+            {isError ? (
               <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-stone-400">
-                  Loading…
+                <td colSpan={6} className="p-6">
+                  <ErrorState
+                    title="Orders unavailable"
+                    message="Unable to retrieve customer orders."
+                    onRetry={() => refetch()}
+                    isRetrying={isFetching}
+                    compact
+                  />
                 </td>
               </tr>
+            ) : isLoading ? (
+              <TableSkeleton rows={6} cols={6} />
             ) : !orders || orders.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-stone-400">
-                  No orders{status !== "all" ? ` with status "${status}"` : ""}.
+                <td colSpan={6} className="px-5 py-12 text-center text-stone-400">
+                  <p className="text-sm font-medium text-stone-600">No orders placed</p>
+                  <p className="mt-1 text-xs text-stone-400">
+                    {status !== "all" ? `No orders found matching status "${status}".` : "Customer orders will appear here once checkout is completed."}
+                  </p>
                 </td>
               </tr>
             ) : (

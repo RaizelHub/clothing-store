@@ -2,13 +2,14 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, Sparkles, Package } from "lucide-react";
+import { ErrorState } from "@/components/ui/StateViews";
 import { getLooks } from "@/api/looks";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export function LooksPage() {
   const [activeTab, setActiveTab] = useState<"all" | "featured">("all");
-  const { data: looks = [], isLoading, isError } = useQuery({
+  const { data: looks = [], isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["looks", activeTab],
     queryFn: () => getLooks(activeTab === "featured"),
   });
@@ -70,9 +71,12 @@ export function LooksPage() {
           <div className="h-80 bg-stone-100 rounded-sm" />
         </div>
       ) : isError ? (
-        <div className="py-20 text-center">
-          <p className="text-sm text-stone-500">Unable to load curated looks at this moment.</p>
-        </div>
+        <ErrorState
+          title="Curated looks unavailable"
+          message="Unable to load styled looks at this moment. Please check your network connection and try again."
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+        />
       ) : looks.length === 0 ? (
         <div className="py-20 text-center space-y-3">
           <Package size={24} className="mx-auto text-stone-300" />

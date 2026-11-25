@@ -5,7 +5,6 @@ import {
   Check,
   ShoppingBag,
   Sparkles,
-  ChevronLeft,
   AlertCircle,
   HelpCircle,
   Tag,
@@ -13,6 +12,7 @@ import {
 import { getLook } from "@/api/looks";
 import { useAddLookToCart } from "@/hooks/useCart";
 import { useUIStore } from "@/store/useUIStore";
+import { ErrorState } from "@/components/ui/StateViews";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { OutfitItemDetail, ProductImage } from "@/types/api";
@@ -30,7 +30,7 @@ export function LookDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const openCart = useUIStore((s) => s.openCartDrawer);
 
-  const { data: outfit, isLoading, isError } = useQuery({
+  const { data: outfit, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["look", slug],
     queryFn: () => getLook(slug || ""),
     enabled: Boolean(slug),
@@ -263,18 +263,14 @@ export function LookDetailPage() {
 
   if (isError || !outfit) {
     return (
-      <div className="container-editorial py-24 text-center space-y-4">
-        <h1 className="text-2xl font-serif text-ink">Look Not Found</h1>
-        <p className="text-xs text-stone-500">
-          The curated outfit you are looking for may have been archived or is temporarily unavailable.
-        </p>
-        <Link
-          to="/looks"
-          className="inline-flex items-center gap-2 text-xs uppercase tracking-widest text-ink underline mt-4"
-        >
-          <ChevronLeft size={14} />
-          <span>Back to All Looks</span>
-        </Link>
+      <div className="container-editorial py-20">
+        <ErrorState
+          title="Look unavailable"
+          message="The curated outfit you are looking for may have been archived, or an unexpected communication error occurred."
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+          secondaryAction={{ label: "Back to All Looks", href: "/looks" }}
+        />
       </div>
     );
   }

@@ -7,7 +7,8 @@ import { ProductGallery } from "@/components/product/ProductGallery";
 import { VariantPicker } from "@/components/product/VariantPicker";
 import { SizeGuide } from "@/components/product/SizeGuide";
 import { Button } from "@/components/ui/Button";
-import { QuantityStepper, EmptyState, Notice, Stars, Skeleton } from "@/components/ui/misc";
+import { QuantityStepper, Notice, Stars, Skeleton } from "@/components/ui/misc";
+import { ErrorState } from "@/components/ui/StateViews";
 import { ProductGrid } from "@/components/product/ProductGrid";
 import { useUIStore } from "@/store/useUIStore";
 import { useAddToCart } from "@/hooks/useCart";
@@ -25,7 +26,7 @@ import { cn } from "@/lib/utils";
 export function ProductDetailPage() {
   const { slug = "" } = useParams();
   const [searchParams] = useSearchParams();
-  const { data: product, isLoading, isError } = useQuery({
+  const { data: product, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["products", slug],
     queryFn: () => getProduct(slug),
     enabled: Boolean(slug),
@@ -83,6 +84,12 @@ export function ProductDetailPage() {
     [product, colorId, sizeId]
   );
 
+  useEffect(() => {
+    if (selectedVariant && selectedVariant.stock > 0 && qty > selectedVariant.stock) {
+      setQty(selectedVariant.stock);
+    }
+  }, [selectedVariant, qty]);
+
   const selectedImages = useMemo(
     () => (product ? getProductDetailImages(product.images, colorId) : []),
     [product, colorId]
@@ -96,6 +103,14 @@ export function ProductDetailPage() {
     }
     if (!selectedVariant || selectedVariant.stock === 0) {
       setAddNotice("That variant combination is currently out of stock.");
+      return;
+    }
+    if (qty <= 0) {
+      setAddNotice("Quantity must be at least 1.");
+      return;
+    }
+    if (qty > selectedVariant.stock) {
+      setAddNotice(`Only ${selectedVariant.stock} pieces available in this size.`);
       return;
     }
     setAddNotice(null);
@@ -126,14 +141,12 @@ export function ProductDetailPage() {
       )}
 
       {isError && (
-        <EmptyState
-          title="Product not found"
-          body="This piece may have completed its production run or the link is expired."
-          action={
-            <Link to="/new" className="text-xs uppercase tracking-widest underline underline-offset-4">
-              Explore new arrivals
-            </Link>
-          }
+        <ErrorState
+          title="Product unavailable"
+          message="This piece may have completed its production run, or an unexpected network interruption occurred."
+          onRetry={() => refetch()}
+          isRetrying={isFetching}
+          secondaryAction={{ label: "Explore New Arrivals", href: "/new" }}
         />
       )}
 
@@ -221,14 +234,23 @@ export function ProductDetailPage() {
 
             {/* Purchasing Action Bar */}
             <div className="space-y-4 pt-2">
+              {selectedVariant && selectedVariant.stock > 0 && selectedVariant.stock <= 3 && (
+                <p className="text-[11px] font-mono text-accent">
+                  Only {selectedVariant.stock} {selectedVariant.stock === 1 ? "piece" : "pieces"} left in this size
+                </p>
+              )}
               <div className="flex items-center gap-3">
-                <QuantityStepper value={qty} max={selectedVariant?.stock ?? 10} onChange={setQty} />
+                <QuantityStepper
+                  value={qty}
+                  max={selectedVariant?.stock ? Math.max(1, selectedVariant.stock) : 10}
+                  onChange={setQty}
+                />
                 <Button
                   size="lg"
                   className="flex-1 py-4"
                   onClick={handleAdd}
                   loading={addToCart.isPending}
-                  disabled={!product.variants.some((v) => v.stock > 0)}
+                  disabled={!product.variants.some((v) => v.stock > 0) || (Boolean(selectedVariant && selectedVariant.stock === 0))}
                 >
                   {selectedVariant && selectedVariant.stock === 0 ? "Sold out" : "Add to Bag"}
                 </Button>
@@ -410,7 +432,12 @@ function ReviewsSection({ productSlug }: { productSlug: string }) {
           ))}
         </ul>
       ) : (
-        <p className="mt-3 text-xs text-stone-500">No client reviews yet. Be the first to share your experience.</p>
+        <div className="mt-4 border border-dashed border-stone-200 p-6 text-center">
+          <p className="text-xs font-medium text-stone-600">No client reviews yet</p>
+          <p className="mt-1 text-[11px] text-stone-400">
+            Be the first to share your experience on drape, cut, and material.
+          </p>
+        </div>
       )}
 
       <form className="mt-8 border border-stone-200 bg-paper p-5" onSubmit={handleSubmit((v) => submit.mutate(v))}>

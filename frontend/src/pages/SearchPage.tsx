@@ -11,6 +11,7 @@ import {
 } from "@/components/product/ProductGrid";
 import { ActiveFiltersBar } from "@/components/product/ActiveFiltersBar";
 import { Drawer } from "@/components/ui/Drawer";
+import { ErrorState } from "@/components/ui/StateViews";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useProductFilterParams, type FilterState } from "@/hooks/useProductFilterParams";
 
@@ -74,7 +75,7 @@ export function SearchPage() {
     };
   }, [activeSearchTerm, filters]);
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["products", queryParams],
     queryFn: () => getProducts(queryParams),
     enabled: activeSearchTerm.length > 0,
@@ -321,9 +322,12 @@ export function SearchPage() {
               </div>
 
               {isError ? (
-                <div className="py-16 text-center text-sm text-accent">
-                  Search failed. Please try again.
-                </div>
+                <ErrorState
+                  title="Search interrupted"
+                  message={`Unable to retrieve search results for "${activeSearchTerm}". Please check your connection and retry.`}
+                  onRetry={() => refetch()}
+                  isRetrying={isFetching}
+                />
               ) : (
                 <ProductGrid
                   products={data?.results ?? []}

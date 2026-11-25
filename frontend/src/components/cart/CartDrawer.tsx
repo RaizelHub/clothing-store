@@ -4,6 +4,7 @@ import { useUIStore } from "@/store/useUIStore";
 import { Drawer } from "@/components/ui/Drawer";
 import { Button } from "@/components/ui/Button";
 import { QuantityStepper, Skeleton } from "@/components/ui/misc";
+import { ErrorState } from "@/components/ui/StateViews";
 import { formatMoney } from "@/lib/format";
 import { useSession } from "@/hooks/auth";
 import { ArrowRight, ShoppingBag, Truck } from "lucide-react";
@@ -11,7 +12,7 @@ import { ArrowRight, ShoppingBag, Truck } from "lucide-react";
 export function CartDrawer() {
   const isOpen = useUIStore((s) => s.isCartDrawerOpen);
   const close = useUIStore((s) => s.closeCartDrawer);
-  const { data: cart, isLoading, isError } = useCart();
+  const { data: cart, isLoading, isError, refetch, isFetching } = useCart();
   const { data: quote } = useShippingQuote();
   const update = useUpdateCartItem();
   const remove = useRemoveCartItem();
@@ -19,6 +20,7 @@ export function CartDrawer() {
   const { data: me } = useSession();
 
   const shipping = cart && quote ? shippingProgress(cart.subtotal, quote.free_shipping_threshold) : null;
+  const hasStockIssues = Boolean(cart?.items.some((i) => i.available_stock <= 0 || i.quantity > i.available_stock));
 
   return (
     <Drawer
@@ -39,13 +41,20 @@ export function CartDrawer() {
             <Button
               fullWidth
               size="lg"
+              disabled={hasStockIssues}
               className="py-4 font-medium"
               onClick={() => {
                 close();
                 navigate("/checkout");
               }}
             >
-              Proceed to Checkout <ArrowRight size={14} />
+              {hasStockIssues ? (
+                "Adjust bag to checkout"
+              ) : (
+                <>
+                  Proceed to Checkout <ArrowRight size={14} />
+                </>
+              )}
             </Button>
             <p className="text-center text-[10.5px] text-stone-400 font-mono">
               Complimentary carbon-neutral packaging included with every order.
@@ -95,7 +104,15 @@ export function CartDrawer() {
       )}
 
       {isError && (
-        <p className="p-6 text-xs text-accent">Unable to sync bag. Please refresh your session.</p>
+        <div className="p-6">
+          <ErrorState
+            title="Bag sync interrupted"
+            message="Unable to sync your shopping bag. Please check your connection."
+            onRetry={() => refetch()}
+            isRetrying={isFetching}
+            compact
+          />
+        </div>
       )}
 
       {/* Empty Bag State */}
@@ -172,11 +189,23 @@ export function CartDrawer() {
                     Remove
                   </button>
                 </div>
-                {item.quantity >= item.available_stock && (
-                  <p className="mt-1.5 text-[10px] text-accent font-mono">
-                    Max inventory limit reached: {item.available_stock} available
+                {item.available_stock <= 0 ? (
+                  <p className="mt-1.5 text-[10.5px] text-accent font-medium font-mono uppercase tracking-wider">
+                    Sold out — remove to proceed
                   </p>
-                )}
+                ) : item.quantity > item.available_stock ? (
+                  <p className="mt-1.5 text-[10.5px] text-accent font-medium font-mono">
+                    Only {item.available_stock} in stock. Please reduce quantity.
+                  </p>
+                ) : item.quantity === item.available_stock ? (
+                  <p className="mt-1.5 text-[10px] text-stone-500 font-mono">
+                    Maximum available pieces ({item.available_stock}) reached
+                  </p>
+                ) : item.available_stock <= 3 ? (
+                  <p className="mt-1.5 text-[10px] text-stone-400 font-mono">
+                    Only {item.available_stock} left
+                  </p>
+                ) : null}
               </div>
             </li>
           ))}

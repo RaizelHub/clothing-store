@@ -3,13 +3,14 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getInventory, updateInventory } from "@/api/admin";
 import { Input } from "@/components/ui/fields";
+import { ErrorState, TableSkeleton } from "@/components/ui/StateViews";
 import { cn } from "@/lib/utils";
 
 export function InventoryPage() {
   const [params] = useSearchParams();
   const lowOnly = params.get("low") === "true";
   const queryClient = useQueryClient();
-  const { data: rows, isLoading } = useQuery({
+  const { data: rows, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["admin", "inventory", lowOnly],
     queryFn: () => getInventory(lowOnly),
   });
@@ -52,16 +53,29 @@ export function InventoryPage() {
             </tr>
           </thead>
           <tbody>
-            {isLoading ? (
+            {isError ? (
               <tr>
-                <td colSpan={5} className="px-5 py-8 text-center text-stone-400">
-                  Loading…
+                <td colSpan={5} className="p-6">
+                  <ErrorState
+                    title="Inventory sync failed"
+                    message="Unable to load SKU inventory quantities."
+                    onRetry={() => refetch()}
+                    isRetrying={isFetching}
+                    compact
+                  />
                 </td>
               </tr>
+            ) : isLoading ? (
+              <TableSkeleton rows={6} cols={5} />
             ) : !rows || rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-5 py-8 text-center text-stone-400">
-                  {lowOnly ? "Nothing low right now." : "No inventory."}
+                <td colSpan={5} className="px-5 py-12 text-center text-stone-400">
+                  <p className="text-sm font-medium text-stone-600">
+                    {lowOnly ? "No low-stock items detected" : "No inventory recorded"}
+                  </p>
+                  <p className="mt-1 text-xs text-stone-400">
+                    {lowOnly ? "All variant SKUs meet or exceed healthy stock thresholds." : "Register product variants to track quantities."}
+                  </p>
                 </td>
               </tr>
             ) : (
