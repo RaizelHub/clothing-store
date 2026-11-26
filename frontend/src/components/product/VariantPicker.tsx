@@ -1,5 +1,6 @@
 import type { Color, Size, VariantSummary } from "@/types/api";
 import { cn } from "@/lib/utils";
+import { Ruler } from "lucide-react";
 
 interface VariantPickerProps {
   variants: VariantSummary[];
@@ -9,6 +10,7 @@ interface VariantPickerProps {
   selectedSizeId: number | null;
   onColor: (id: number) => void;
   onSize: (id: number) => void;
+  onOpenSizeGuide?: () => void;
 }
 
 export function VariantPicker({
@@ -19,6 +21,7 @@ export function VariantPicker({
   selectedSizeId,
   onColor,
   onSize,
+  onOpenSizeGuide,
 }: VariantPickerProps) {
   const stockFor = (colorId: number, sizeId: number) =>
     variants.find((v) => v.color.id === colorId && v.size.id === sizeId)?.stock ?? 0;
@@ -55,6 +58,7 @@ export function VariantPicker({
                   aria-pressed={on}
                   disabled={!hasStock}
                   title={hasStock ? c.name : `${c.name} — Sold Out`}
+                  aria-label={hasStock ? `Colour ${c.name}` : `Colour ${c.name}, Sold out`}
                   onClick={() => onColor(c.id)}
                   className={cn(
                     "size-7 rounded-full border border-stone-300 transition-all duration-200 relative",
@@ -78,11 +82,21 @@ export function VariantPicker({
               {sizes.find((s) => s.id === selectedSizeId)?.name ?? "Select Size"}
             </span>
           </span>
+          {onOpenSizeGuide && (
+            <button
+              type="button"
+              onClick={onOpenSizeGuide}
+              className="flex items-center gap-1.5 text-[11px] uppercase tracking-widest text-stone-500 hover:text-ink transition-colors underline-offset-4 hover:underline"
+            >
+              <Ruler size={13} strokeWidth={1.5} /> Size Guide
+            </button>
+          )}
         </div>
-        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 font-mono">
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 font-mono">
           {sizes.map((s) => {
             const inSelection = selectedColorId !== null;
-            const out = inSelection && stockFor(selectedColorId, s.id) === 0;
+            const stock = inSelection ? stockFor(selectedColorId, s.id) : 0;
+            const out = inSelection && stock === 0;
             const on = selectedSizeId === s.id;
             return (
               <button
@@ -90,13 +104,25 @@ export function VariantPicker({
                 type="button"
                 aria-pressed={on}
                 disabled={inSelection && out}
+                title={
+                  out
+                    ? `${s.name} — Sold Out`
+                    : inSelection
+                      ? `${s.name} — ${stock} in stock`
+                      : s.name
+                }
+                aria-label={
+                  out
+                    ? `Size ${s.name}, Sold Out`
+                    : `Size ${s.name}${inSelection ? `, ${stock} in stock` : ""}`
+                }
                 onClick={() => onSize(s.id)}
                 className={cn(
                   "border py-2.5 text-xs uppercase tracking-wider transition-all duration-200 relative",
                   on
-                    ? "border-ink bg-ink text-paper"
+                    ? "border-ink bg-ink text-paper font-semibold shadow-xs"
                     : out
-                      ? "cursor-not-allowed border-stone-200 text-stone-300 line-through bg-stone-50/50"
+                      ? "cursor-not-allowed border-stone-200 text-stone-300 line-through bg-stone-50/70 opacity-60"
                       : "border-stone-200 text-stone-800 hover:border-stone-400 bg-paper"
                 )}
               >

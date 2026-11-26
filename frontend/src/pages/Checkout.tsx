@@ -97,6 +97,12 @@ export function CheckoutPage() {
     [cart, quote, method, coupon]
   );
 
+  const stockErrors = useMemo(
+    () => cart?.items.filter((i) => i.available_stock <= 0 || i.quantity > i.available_stock) ?? [],
+    [cart?.items]
+  );
+  const hasStockErrors = stockErrors.length > 0;
+
 
 
   const place = useMutation({
@@ -173,11 +179,6 @@ export function CheckoutPage() {
   }
 
   const contactComplete = Boolean(me) || guestEmailValid;
-  const stockErrors = useMemo(
-    () => cart?.items.filter((i) => i.available_stock <= 0 || i.quantity > i.available_stock) ?? [],
-    [cart?.items]
-  );
-  const hasStockErrors = stockErrors.length > 0;
 
   return (
     <section className="container-editorial py-10 md:py-14">
@@ -502,8 +503,8 @@ export function CheckoutPage() {
                   {hasStockErrors
                     ? "Adjust quantities to order"
                     : paymentMethod === "paymongo"
-                    ? "Proceed to PayMongo"
-                    : `Place order · ${formatMoney(totals.total)}`}
+                      ? "Proceed to PayMongo"
+                      : `Place order · ${formatMoney(totals.total)}`}
                 </Button>
               </div>
             </form>

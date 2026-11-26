@@ -217,6 +217,7 @@ export function ProductDetailPage() {
                   setSizeId(null);
                 }}
                 onSize={setSizeId}
+                onOpenSizeGuide={() => setSizeGuideOpen(true)}
               />
             </div>
 
@@ -231,6 +232,18 @@ export function ProductDetailPage() {
                 <Ruler size={13} strokeWidth={1.5} /> Size Guide
               </button>
             </div>
+
+            {/* Fit Guidance Card */}
+            {product.fit && (
+              <div className="flex items-start gap-2.5 rounded bg-stone-50 border border-stone-200/80 p-3 text-xs text-stone-700">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-stone-500 font-medium shrink-0 pt-0.5">
+                  Fit Note:
+                </span>
+                <p className="leading-relaxed text-stone-700 font-sans">
+                  {product.fit}
+                </p>
+              </div>
+            )}
 
             {/* Purchasing Action Bar */}
             <div className="space-y-4 pt-2">
@@ -332,7 +345,26 @@ export function ProductDetailPage() {
       {product && <RelatedProducts categorySlug={product.category_slug} currentId={product.id} />}
 
       {/* Size Guide Modal */}
-      <SizeGuide open={sizeGuideOpen} onClose={() => setSizeGuideOpen(false)} />
+      {product && (
+        <SizeGuide
+          open={sizeGuideOpen}
+          onClose={() => setSizeGuideOpen(false)}
+          categorySlug={product.category_slug}
+          categoryName={product.category_name}
+          productName={product.name}
+          productFit={product.fit}
+          selectedSizeName={
+            selectedVariant?.size.name ??
+            (product.sizes.find((s) => s.id === sizeId)?.name ?? null)
+          }
+          onSelectSizeName={(sizeName) => {
+            const match = product.sizes.find((s) => s.name === sizeName);
+            if (match) {
+              setSizeId(match.id);
+            }
+          }}
+        />
+      )}
     </section>
   );
 }

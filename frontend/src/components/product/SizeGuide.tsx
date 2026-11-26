@@ -1,91 +1,264 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
+import {
+  SIZE_CATEGORY_GUIDES,
+  resolveCategoryGuide,
+  type SizeCategoryKey,
+  type Unit,
+} from "./sizeGuideData";
+import { Info, HelpCircle } from "lucide-react";
 
-const ROWS_INCHES = [
-  { size: "XS", chest: "34–35", waist: "28–29", hips: "35–36", length: "27" },
-  { size: "S", chest: "36–37", waist: "30–31", hips: "37–38", length: "28" },
-  { size: "M", chest: "38–40", waist: "32–33", hips: "39–41", length: "29" },
-  { size: "L", chest: "41–43", waist: "34–36", hips: "42–44", length: "30" },
-  { size: "XL", chest: "44–46", waist: "37–39", hips: "45–47", length: "31" },
-];
+export interface SizeGuideProps {
+  open: boolean;
+  onClose: () => void;
+  categorySlug?: string;
+  categoryName?: string;
+  productName?: string;
+  productFit?: string;
+  selectedSizeName?: string | null;
+  onSelectSizeName?: (sizeName: string) => void;
+}
 
-const ROWS_CM = [
-  { size: "XS", chest: "86–89", waist: "71–74", hips: "89–92", length: "68" },
-  { size: "S", chest: "91–94", waist: "76–79", hips: "94–97", length: "71" },
-  { size: "M", chest: "96–102", waist: "81–84", hips: "99–104", length: "74" },
-  { size: "L", chest: "104–109", waist: "86–91", hips: "107–112", length: "76" },
-  { size: "XL", chest: "112–117", waist: "94–99", hips: "114–119", length: "79" },
-];
+export function SizeGuide({
+  open,
+  onClose,
+  categorySlug,
+  categoryName,
+  productName,
+  productFit,
+  selectedSizeName,
+  onSelectSizeName,
+}: SizeGuideProps) {
+  const [activeCategory, setActiveCategory] = useState<SizeCategoryKey>("tops");
+  const [unit, setUnit] = useState<Unit>("cm");
+  const [showHowToMeasure, setShowHowToMeasure] = useState(true);
 
-export function SizeGuide({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [unit, setUnit] = useState<"in" | "cm">("in");
-  const rows = unit === "in" ? ROWS_INCHES : ROWS_CM;
+  // Sync category when opened or when product category changes
+  useEffect(() => {
+    if (open) {
+      setActiveCategory(resolveCategoryGuide(categorySlug, categoryName));
+    }
+  }, [open, categorySlug, categoryName]);
+
+  const currentGuide = SIZE_CATEGORY_GUIDES[activeCategory] ?? SIZE_CATEGORY_GUIDES.tops;
+  const categoriesList: { key: SizeCategoryKey; label: string }[] = [
+    { key: "tops", label: "Tops & Shirts" },
+    { key: "bottoms", label: "Bottoms & Denim" },
+    { key: "dresses", label: "Dresses" },
+    { key: "outerwear", label: "Outerwear & Coats" },
+  ];
 
   return (
-    <Modal open={open} onClose={onClose} title="Atelier Size Guide" size="md">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Studio Sizing & Fit Guide"
+      size="xl"
+    >
       <div className="space-y-6">
-        <div className="flex items-center justify-between border-b border-stone-200 pb-3">
-          <p className="text-xs text-stone-500 leading-relaxed max-w-sm">
-            All garments are cut to standard European tailoring proportions. If between sizes, we recommend sizing up for layering ease.
-          </p>
-          <div className="flex rounded border border-stone-200 p-0.5 font-mono text-[10.5px]">
-            <button
-              type="button"
-              onClick={() => setUnit("in")}
-              className={cn(
-                "px-2.5 py-1 uppercase tracking-wider transition-colors",
-                unit === "in" ? "bg-ink text-paper" : "text-stone-500 hover:text-ink"
-              )}
+        {/* Editorial Subheader & Category Selector */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-4">
+          {/* Category Tabs */}
+          <div
+            role="tablist"
+            aria-label="Size guide categories"
+            className="flex flex-wrap gap-1 p-0.5 bg-stone-100/80 rounded"
+          >
+            {categoriesList.map((cat) => {
+              const isActive = activeCategory === cat.key;
+              return (
+                <button
+                  key={cat.key}
+                  role="tab"
+                  type="button"
+                  id={`tab-${cat.key}`}
+                  aria-selected={isActive}
+                  aria-controls={`panel-${cat.key}`}
+                  onClick={() => setActiveCategory(cat.key)}
+                  className={cn(
+                    "px-3 py-1.5 text-xs font-mono uppercase tracking-wider transition-all",
+                    isActive
+                      ? "bg-paper text-ink font-medium shadow-xs"
+                      : "text-stone-500 hover:text-ink"
+                  )}
+                >
+                  {cat.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Unit Switcher */}
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <span className="text-[11px] font-mono uppercase tracking-widest text-stone-400">
+              Unit:
+            </span>
+            <div
+              role="radiogroup"
+              aria-label="Measurement units"
+              className="flex rounded border border-stone-200 p-0.5 font-mono text-[11px] bg-paper"
             >
-              Inches
-            </button>
-            <button
-              type="button"
-              onClick={() => setUnit("cm")}
-              className={cn(
-                "px-2.5 py-1 uppercase tracking-wider transition-colors",
-                unit === "cm" ? "bg-ink text-paper" : "text-stone-500 hover:text-ink"
-              )}
-            >
-              CM
-            </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={unit === "cm"}
+                onClick={() => setUnit("cm")}
+                className={cn(
+                  "px-3 py-1 uppercase tracking-wider transition-colors",
+                  unit === "cm"
+                    ? "bg-ink text-paper font-medium"
+                    : "text-stone-500 hover:text-ink"
+                )}
+              >
+                CM
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={unit === "in"}
+                onClick={() => setUnit("in")}
+                className={cn(
+                  "px-3 py-1 uppercase tracking-wider transition-colors",
+                  unit === "in"
+                    ? "bg-ink text-paper font-medium"
+                    : "text-stone-500 hover:text-ink"
+                )}
+              >
+                Inches
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs font-mono">
-            <thead>
-              <tr className="border-b border-stone-200 text-left uppercase tracking-widest text-stone-500">
-                <th className="pb-2.5 font-sans font-medium">Size</th>
-                <th className="pb-2.5">Chest</th>
-                <th className="pb-2.5">Waist</th>
-                <th className="pb-2.5">Hips</th>
-                <th className="pb-2.5">Length</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100">
-              {rows.map((r) => (
-                <tr key={r.size} className="hover:bg-stone-50/50">
-                  <td className="py-2.5 font-sans font-medium text-ink">{r.size}</td>
-                  <td className="py-2.5 text-stone-600">{r.chest}</td>
-                  <td className="py-2.5 text-stone-600">{r.waist}</td>
-                  <td className="py-2.5 text-stone-600">{r.hips}</td>
-                  <td className="py-2.5 text-stone-600">{r.length}</td>
+        {/* Product Specific Fit Guidance */}
+        {productFit && (
+          <div className="rounded bg-stone-50/90 border border-stone-200/90 p-4 space-y-1.5">
+            <div className="flex items-center gap-2 text-xs font-medium text-ink">
+              <Info size={14} strokeWidth={1.5} className="text-stone-500 shrink-0" />
+              <span className="uppercase tracking-wider font-mono text-[10.5px] text-stone-500">
+                Fit & Silhouette for {productName ?? "this piece"}
+              </span>
+            </div>
+            <p className="text-xs text-stone-700 leading-relaxed pl-5.5">
+              {productFit}
+            </p>
+          </div>
+        )}
+
+        {/* Measurement Table */}
+        <div
+          id={`panel-${activeCategory}`}
+          role="tabpanel"
+          aria-labelledby={`tab-${activeCategory}`}
+          className="space-y-2"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-stone-500">
+              {currentGuide.description}{" "}
+              <span className="font-mono text-[10.5px] text-stone-400">
+                (All values in {unit === "cm" ? "centimeters" : "inches"})
+              </span>
+            </p>
+            {selectedSizeName && (
+              <span className="text-[11px] font-mono text-ink bg-stone-100 px-2 py-0.5 rounded">
+                Active Selection: Size {selectedSizeName}
+              </span>
+            )}
+          </div>
+
+          <div className="overflow-x-auto border border-stone-200 rounded">
+            <table className="w-full text-xs font-mono">
+              <thead>
+                <tr className="bg-stone-50/80 border-b border-stone-200 text-left uppercase tracking-wider text-stone-500 text-[10.5px]">
+                  <th className="py-3 px-3 font-sans font-medium text-ink">Size</th>
+                  <th className="py-3 px-3">US</th>
+                  <th className="py-3 px-3">EU</th>
+                  <th className="py-3 px-3">UK</th>
+                  {currentGuide.columns.map((col) => (
+                    <th key={col.key} className="py-3 px-3 whitespace-nowrap">
+                      {col.label}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-stone-100 bg-paper">
+                {currentGuide.rows.map((r) => {
+                  const isSelected = selectedSizeName === r.size;
+                  return (
+                    <tr
+                      key={r.size}
+                      onClick={() => onSelectSizeName?.(r.size)}
+                      className={cn(
+                        "transition-colors",
+                        onSelectSizeName && "cursor-pointer hover:bg-stone-50/70",
+                        isSelected
+                          ? "bg-stone-100/90 font-medium text-ink border-l-3 border-ink"
+                          : "text-stone-700"
+                      )}
+                    >
+                      <td className="py-3 px-3 font-sans font-medium text-ink whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span>{r.size}</span>
+                          {isSelected && (
+                            <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.2 bg-ink text-paper rounded-xs font-mono">
+                              Selected
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-stone-500 whitespace-nowrap">{r.intl.us}</td>
+                      <td className="py-3 px-3 text-stone-500 whitespace-nowrap">{r.intl.eu}</td>
+                      <td className="py-3 px-3 text-stone-500 whitespace-nowrap">{r.intl.uk}</td>
+                      {currentGuide.columns.map((col) => (
+                        <td key={col.key} className="py-3 px-3 whitespace-nowrap">
+                          {unit === "cm" ? r.cm[col.key] ?? "—" : r.in[col.key] ?? "—"}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        <div className="rounded bg-stone-50 p-4 border border-stone-200/80 space-y-1 text-xs text-stone-600">
-          <span className="font-mono text-[10px] uppercase tracking-wider text-stone-500 block">
-            How to Measure
-          </span>
-          <p className="leading-relaxed">
-            Measure around the fullest part of your chest with a soft measuring tape held horizontal. Keep tape comfortable without pulling tight.
-          </p>
+        {/* How to Measure Guide */}
+        <div className="border border-stone-200/80 rounded bg-stone-50/50 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider font-mono text-stone-700">
+              <HelpCircle size={14} strokeWidth={1.5} className="text-stone-500" />
+              <span>How to Measure ({currentGuide.label})</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowHowToMeasure((v) => !v)}
+              className="text-[11px] font-mono text-stone-500 hover:text-ink underline underline-offset-2"
+            >
+              {showHowToMeasure ? "Hide Guide" : "Show Guide"}
+            </button>
+          </div>
+
+          {showHowToMeasure && (
+            <div className="grid gap-3 pt-1 text-xs text-stone-600 sm:grid-cols-2">
+              {currentGuide.measureTips.map((tip) => (
+                <div key={tip.title} className="space-y-0.5">
+                  <span className="font-mono text-[10.5px] uppercase tracking-wider text-ink font-medium block">
+                    {tip.title}
+                  </span>
+                  <p className="text-[11.5px] leading-relaxed text-stone-600">
+                    {tip.instruction}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+
+        {/* Tailoring Reference Note */}
+        <p className="text-[11px] text-stone-400 font-mono leading-relaxed border-t border-stone-200 pt-3">
+          Garment measurements represent Studio standard tailoring reference parameters. Each garment is cut to express its distinct silhouette and drape. For between-size inquiries, we advise consulting our garment Fit Note above or reaching out to atelier client concierge.
+        </p>
       </div>
     </Modal>
   );
