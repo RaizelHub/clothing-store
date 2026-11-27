@@ -120,6 +120,7 @@ class Order(models.Model):
     checkout_url = models.URLField(max_length=600, blank=True)
     payment_data = models.JSONField(default=dict, blank=True)
     is_stock_deducted = models.BooleanField(default=False)
+    idempotency_key = models.CharField(max_length=120, blank=True, null=True, unique=True, db_index=True)
 
     tracking_number = models.CharField(max_length=80, null=True, blank=True)
     carrier = models.CharField(max_length=60, null=True, blank=True)

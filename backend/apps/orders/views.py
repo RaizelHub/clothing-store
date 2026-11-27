@@ -4,7 +4,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, DecimalField, F, Q, Sum
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
@@ -324,6 +324,24 @@ def place_order(request):
     body = request.data
     payment = body.get("payment") or {}
 
+    # Extract Idempotency Key from standard headers or request payload
+    raw_idempotency = (
+        request.headers.get("Idempotency-Key")
+        or request.META.get("HTTP_IDEMPOTENCY_KEY")
+        or body.get("idempotency_key")
+    )
+    idempotency_key = str(raw_idempotency).strip()[:120] if raw_idempotency else None
+
+    # Fast-path idempotency replay: if order already exists with this key, return it immediately
+    if idempotency_key:
+        existing_order = (
+            Order.objects.filter(idempotency_key=idempotency_key)
+            .prefetch_related("items")
+            .first()
+        )
+        if existing_order:
+            return Response(OrderSerializer(existing_order).data, status=status.HTTP_200_OK)
+
     # Environment-based provider selection (PayMongo isolated behind configuration)
     env_provider = getattr(settings, "PAYMENTS_PROVIDER", "mock").strip().lower()
     requested_provider = str(payment.get("provider", "")).strip().lower()
@@ -343,7 +361,22 @@ def place_order(request):
             return Response({"detail": "Your card was declined."}, status=status.HTTP_402_PAYMENT_REQUIRED)
 
     cart = _cart(request)
-    items = list(cart.items.select_related("variant__product", "variant__color", "variant__size").all())
+    # Concurrency Lock: Lock the Cart record so concurrent checkout attempts cannot duplicate
+    locked_cart = Cart.objects.select_for_update().filter(pk=cart.pk).first()
+    if not locked_cart:
+        raise ValidationError({"detail": "Cart not found."})
+
+    # Re-check idempotency key under cart lock (in case concurrent thread finished while waiting)
+    if idempotency_key:
+        existing_order = (
+            Order.objects.filter(idempotency_key=idempotency_key)
+            .prefetch_related("items")
+            .first()
+        )
+        if existing_order:
+            return Response(OrderSerializer(existing_order).data, status=status.HTTP_200_OK)
+
+    items = list(locked_cart.items.select_related("variant__product", "variant__color", "variant__size").all())
     if not items:
         raise ValidationError({"detail": "Cart is empty."})
 
@@ -398,28 +431,40 @@ def place_order(request):
     if not is_paymongo:
         initial_timeline.append({"status": "paid", "at": now.isoformat(), "note": "Payment confirmed"})
 
-    order = Order.objects.create(
-        order_number=_next_order_number(),
-        user=user,
-        customer_email=customer_email,
-        customer_name=customer_name,
-        status=initial_status,
-        payment_status=initial_payment_status,
-        payment_provider=provider_name,
-        subtotal=from_cents(subtotal_c),
-        shipping=from_cents(shipping_c),
-        discount=from_cents(discount_c),
-        tax=from_cents(tax_c),
-        total=from_cents(total_c),
-        coupon=Coupon.objects.filter(code__iexact=coupon["code"]).first() if coupon and coupon["valid"] else None,
-        shipping_address=shipping_address,
-        billing_address=billing_address,
-        billing_same_as_shipping=billing_same,
-        shipping_method=str(body.get("shipping_method", "standard")),
-        payment_method=payment_method_label,
-        timeline=initial_timeline,
-        is_stock_deducted=True,
-    )
+    try:
+        order = Order.objects.create(
+            order_number=_next_order_number(),
+            user=user,
+            customer_email=customer_email,
+            customer_name=customer_name,
+            status=initial_status,
+            payment_status=initial_payment_status,
+            payment_provider=provider_name,
+            subtotal=from_cents(subtotal_c),
+            shipping=from_cents(shipping_c),
+            discount=from_cents(discount_c),
+            tax=from_cents(tax_c),
+            total=from_cents(total_c),
+            coupon=Coupon.objects.filter(code__iexact=coupon["code"]).first() if coupon and coupon["valid"] else None,
+            shipping_address=shipping_address,
+            billing_address=billing_address,
+            billing_same_as_shipping=billing_same,
+            shipping_method=str(body.get("shipping_method", "standard")),
+            payment_method=payment_method_label,
+            timeline=initial_timeline,
+            is_stock_deducted=True,
+            idempotency_key=idempotency_key,
+        )
+    except IntegrityError:
+        if idempotency_key:
+            existing_order = (
+                Order.objects.filter(idempotency_key=idempotency_key)
+                .prefetch_related("items")
+                .first()
+            )
+            if existing_order:
+                return Response(OrderSerializer(existing_order).data, status=status.HTTP_200_OK)
+        raise ValidationError({"detail": "A duplicate order submission was detected. Please check your orders."})
 
     for item in items:
         from apps.catalog.media_storage import build_product_image_urls
@@ -447,7 +492,7 @@ def place_order(request):
     if order.coupon:
         Coupon.objects.filter(pk=order.coupon.pk).update(uses=F("uses") + 1)
 
-    cart.items.all().delete()
+    locked_cart.items.all().delete()
 
     if is_paymongo:
         frontend_base = getattr(settings, "FRONTEND_URL", "http://localhost:5173").rstrip("/")

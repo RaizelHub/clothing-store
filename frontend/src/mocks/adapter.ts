@@ -373,6 +373,7 @@ function orderShape(o: DBOrder): Order {
     created_at: o.created_at,
     customer_email: o.customer_email,
     customer_name: o.customer_name,
+    idempotency_key: o.idempotency_key ?? null,
   };
 }
 
@@ -533,9 +534,23 @@ function buildOrder(
     shipping_method: string;
     coupon_code: string | null;
     payment: { provider: string; method: string; last4?: string };
+    idempotency_key?: string;
   },
   headers?: Record<string, string>
 ): Order {
+  const idempotencyKey =
+    headers?.["idempotency-key"] ||
+    headers?.["Idempotency-Key"] ||
+    headers?.["IDEMPOTENCY-KEY"] ||
+    body.idempotency_key;
+
+  if (idempotencyKey) {
+    const existing = db.orders.find((o) => o.idempotency_key === idempotencyKey);
+    if (existing) {
+      return orderShape(existing);
+    }
+  }
+
   const owner = String(ownerKey(me, headers));
   const raw = db.carts[owner] ?? [];
   const items = raw.map((r) => joinCartItem(db, r)).filter((i): i is CartItem => i !== null);
@@ -605,6 +620,7 @@ function buildOrder(
     customer_email: orderEmail,
     customer_name: orderName,
     user_id: me?.id ?? null,
+    idempotency_key: idempotencyKey ?? null,
   };
 
   // deduct stock

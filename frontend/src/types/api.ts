@@ -270,6 +270,7 @@ export interface Order {
   payment_status?: string;
   checkout_url?: string;
   is_stock_deducted?: boolean;
+  idempotency_key?: string | null;
   tracking_number: string | null;
   carrier: string | null;
   timeline: OrderTimelineEntry[];

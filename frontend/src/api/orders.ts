@@ -34,9 +34,14 @@ export interface PlaceOrderPayload {
     method?: string;
     number?: string;
   };
+  idempotency_key?: string;
 }
 
 export async function placeOrder(payload: PlaceOrderPayload): Promise<Order> {
-  const { data } = await apiClient.post<Order>("/checkout/place-order/", payload);
+  const headers: Record<string, string> = {};
+  if (payload.idempotency_key) {
+    headers["Idempotency-Key"] = payload.idempotency_key;
+  }
+  const { data } = await apiClient.post<Order>("/checkout/place-order/", payload, { headers });
   return data;
 }

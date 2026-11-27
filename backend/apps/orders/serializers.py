@@ -128,6 +128,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "payment_status",
             "checkout_url",
             "is_stock_deducted",
+            "idempotency_key",
             "tracking_number",
             "carrier",
             "timeline",

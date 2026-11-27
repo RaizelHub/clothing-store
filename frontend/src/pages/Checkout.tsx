@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -105,6 +105,10 @@ export function CheckoutPage() {
 
 
 
+  const idempotencyKeyRef = useRef<string>(`idemp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+  const isSubmittingRef = useRef<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
   const place = useMutation({
     mutationFn: () => {
       if (!cart || !cart.items.length) throw new Error("Bag is empty.");
@@ -125,16 +129,25 @@ export function CheckoutPage() {
           method: "card",
           number: paymentMethod === "mock" ? card.number : undefined,
         },
+        idempotency_key: idempotencyKeyRef.current,
       });
     },
     onSuccess: (order: Order) => {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      // Reset idempotency key for any future orders
+      idempotencyKeyRef.current = `idemp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
       if (order.checkout_url && paymentMethod === "paymongo") {
         window.location.href = order.checkout_url;
       } else {
         navigate(`/checkout/success/${order.order_number}`, { state: { order } });
       }
     },
-    onError: (e) => setServerError(getApiErrorMessage(e)),
+    onError: (e) => {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      setServerError(getApiErrorMessage(e));
+    },
   });
 
   if (isLoading) {
@@ -473,28 +486,40 @@ export function CheckoutPage() {
                 </p>
                 <Button
                   size="lg"
-                  loading={place.isPending}
-                  disabled={hasStockErrors}
-                  onClick={() => {
-                    if (hasStockErrors) {
-                      setServerError("Please adjust out-of-stock items before placing your order.");
-                      return;
-                    }
+                  loading={place.isPending || isSubmitting}
+                  disabled={hasStockErrors || !contactComplete || place.isPending || isSubmitting}
+                  onClick={async () => {
+                    if (isSubmittingRef.current || place.isPending || hasStockErrors) return;
+
                     if (paymentMethod === "mock") {
-                      cardForm.trigger().then((valid) => {
-                        if (!valid) return;
+                      isSubmittingRef.current = true;
+                      setIsSubmitting(true);
+                      try {
+                        const valid = await cardForm.trigger();
+                        if (!valid) {
+                          isSubmittingRef.current = false;
+                          setIsSubmitting(false);
+                          return;
+                        }
                         if (!sameAsShipping && !billing) {
                           setServerError("Complete the billing address.");
+                          isSubmittingRef.current = false;
+                          setIsSubmitting(false);
                           return;
                         }
                         setServerError(null);
                         place.mutate();
-                      });
+                      } catch {
+                        isSubmittingRef.current = false;
+                        setIsSubmitting(false);
+                      }
                     } else {
                       if (!sameAsShipping && !billing) {
                         setServerError("Complete the billing address.");
                         return;
                       }
+                      isSubmittingRef.current = true;
+                      setIsSubmitting(true);
                       setServerError(null);
                       place.mutate();
                     }
@@ -502,9 +527,11 @@ export function CheckoutPage() {
                 >
                   {hasStockErrors
                     ? "Adjust quantities to order"
-                    : paymentMethod === "paymongo"
-                      ? "Proceed to PayMongo"
-                      : `Place order · ${formatMoney(totals.total)}`}
+                    : (place.isPending || isSubmitting)
+                      ? "Processing order..."
+                      : paymentMethod === "paymongo"
+                        ? "Proceed to PayMongo"
+                        : `Place order · ${formatMoney(totals.total)}`}
                 </Button>
               </div>
             </form>
